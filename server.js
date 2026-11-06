@@ -640,8 +640,12 @@ function proxyToAgentAssetServer(req, res, targetPath) {
     headers: { Accept: req.headers.accept || "*/*" },
   };
   const proxyReq = http.request(options, (proxyRes) => {
+    let contentType = proxyRes.headers["content-type"] || "application/octet-stream";
+    if (contentType === "application/octet-stream" && targetPath.includes("/thumbnails/")) {
+      contentType = "image/png";
+    }
     res.writeHead(proxyRes.statusCode || 200, {
-      "Content-Type": proxyRes.headers["content-type"] || "application/octet-stream",
+      "Content-Type": contentType,
       "Cache-Control": "public, max-age=3600",
       "Access-Control-Allow-Origin": "*",
     });
@@ -866,7 +870,7 @@ const server = http.createServer(async (req, res) => {
       const ext = path.extname(safePath).toLowerCase();
       res.writeHead(200, {
         "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
-        "Cache-Control": ext === ".html" || safePath.endsWith("preload-web-shim.js") || safePath.endsWith("debloat.css")
+        "Cache-Control": ext === ".html" || safePath.endsWith("app.js") || safePath.endsWith("styles.css") || safePath.endsWith("preload-web-shim.js") || safePath.endsWith("debloat.css")
           ? "no-store"
           : "public, max-age=3600",
       });

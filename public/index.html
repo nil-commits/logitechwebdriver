@@ -1,1516 +1,860 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-interface-theme="ice">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta
-    http-equiv="Content-Security-Policy"
-    content="default-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; img-src 'self' data: blob: http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';"
-  />
-  <title>Logitech G Web Hub — Local Hardware Driver</title>
-  <link rel="icon" href="/icon.png" />
-  <style>
-    :root {
-      --bg-base: #080b10;
-      --bg-surface: #0f141d;
-      --bg-elevated: #151c28;
-      --bg-card: #18202e;
-      --bg-hover: #1f293a;
-      --border: rgba(255, 255, 255, 0.07);
-      --border-strong: rgba(255, 255, 255, 0.15);
-      --text-primary: #f2f6fa;
-      --text-secondary: #9aa6b8;
-      --text-muted: #637083;
-      --accent: #00b8fc;
-      --accent-soft: rgba(0, 184, 252, 0.13);
-      --accent-glow: rgba(0, 184, 252, 0.32);
-      --green: #00e676;
-      --green-soft: rgba(0, 230, 118, 0.13);
-      --amber: #ffb300;
-      --amber-soft: rgba(255, 179, 0, 0.14);
-      --danger: #ff5252;
-      --purple: #c084fc;
-      --radius-sm: 8px;
-      --radius-md: 12px;
-      --radius-lg: 18px;
-      --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      user-select: none;
-    }
-
-    body {
-      background: radial-gradient(circle at 50% 0%, #131c2b 0%, var(--bg-base) 68%);
-      color: var(--text-primary);
-      font-family: var(--font-sans);
-      height: 100vh;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    /* TOP BAR (Wootility / MCHOSE / Corsair Web Hub inspired) */
-    .topbar {
-      height: 62px;
-      padding: 0 28px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid var(--border);
-      background: rgba(8, 11, 16, 0.8);
-      backdrop-filter: blur(16px);
-      z-index: 20;
-      flex-shrink: 0;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .brand-logo {
-      width: 30px;
-      height: 30px;
-      border-radius: 9px;
-      background: linear-gradient(135deg, #00b8fc, #0077ff);
-      display: grid;
-      place-items: center;
-      color: #04080e;
-      font-weight: 900;
-      font-size: 0.96rem;
-      box-shadow: 0 0 20px rgba(0, 184, 252, 0.3);
-      letter-spacing: -0.03em;
-    }
-
-    .brand-title {
-      font-weight: 700;
-      font-size: 0.96rem;
-      letter-spacing: -0.01em;
-    }
-
-    .brand-sub {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      font-weight: 500;
-      margin-left: 6px;
-    }
-
-    /* DEVICE SWITCHER PILLS */
-    .device-switcher {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--bg-surface);
-      padding: 4px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-    }
-
-    .dev-pill {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      padding: 7px 16px;
-      border-radius: 999px;
-      border: none;
-      background: transparent;
-      color: var(--text-secondary);
-      font-size: 0.81rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.18s ease;
-    }
-
-    .dev-pill:hover {
-      color: var(--text-primary);
-    }
-
-    .dev-pill.active {
-      background: var(--bg-elevated);
-      color: var(--text-primary);
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), inset 0 0 0 1px var(--border-strong);
-    }
-
-    .dev-pill .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--text-muted);
-    }
-
-    .dev-pill.active .dot {
-      background: var(--green);
-      box-shadow: 0 0 8px var(--green);
-    }
-
-    .dev-pill .bat-mini {
-      font-family: var(--font-mono);
-      font-size: 0.71rem;
-      color: var(--accent);
-      background: var(--accent-soft);
-      padding: 2px 7px;
-      border-radius: 999px;
-    }
-
-    /* TOP RIGHT ACTIONS */
-    .top-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .status-chip {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      background: var(--bg-surface);
-      border: 1px solid var(--border);
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
-    .status-chip .pulse {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 8px var(--green);
-    }
-
-    .status-chip.offline .pulse {
-      background: var(--danger);
-      box-shadow: 0 0 8px var(--danger);
-    }
-
-    .btn-ghost {
-      background: var(--bg-surface);
-      color: var(--text-primary);
-      border: 1px solid var(--border);
-      padding: 7px 13px;
-      border-radius: 999px;
-      font-size: 0.76rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .btn-ghost:hover {
-      border-color: var(--border-strong);
-      background: var(--bg-elevated);
-    }
-
-    .btn-ghost.accent {
-      border-color: rgba(0, 184, 252, 0.4);
-      background: var(--accent-soft);
-      color: var(--accent);
-    }
-
-    /* WORKSPACE: STAGE TOP + DOCK BOTTOM */
-    .workspace {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-      position: relative;
-    }
-
-    /* HERO VISUAL STAGE */
-    .stage {
-      flex: 1;
-      min-height: 250px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 16px 32px 12px;
-      position: relative;
-    }
-
-    .stage-meta {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 10px;
-      margin-bottom: 16px;
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-    }
-
-    .stage-meta span {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border);
-      padding: 4px 12px;
-      border-radius: 999px;
-    }
-
-    .stage-meta strong {
-      color: var(--text-primary);
-      font-weight: 600;
-      font-family: var(--font-mono);
-    }
-
-    /* INTERACTIVE PRO X SUPERLIGHT 2 STAGE */
-    .mouse-stage {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 44px;
-    }
-
-    .mouse-side-col {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      width: 225px;
-    }
-
-    .telemetry-card {
-      background: rgba(15, 20, 29, 0.85);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 13px 16px;
-      transition: border-color 0.2s ease, transform 0.15s ease;
-    }
-
-    .telemetry-card:hover {
-      border-color: var(--border-strong);
-      transform: translateY(-1px);
-    }
-
-    .telemetry-card .t-label {
-      font-size: 0.68rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      font-weight: 600;
-      margin-bottom: 5px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .telemetry-card .t-val {
-      font-size: 1.28rem;
-      font-weight: 700;
-      font-family: var(--font-mono);
-      color: var(--text-primary);
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-
-    .telemetry-card .t-sub {
-      font-size: 0.72rem;
-      font-family: var(--font-sans);
-      color: var(--text-secondary);
-      font-weight: 500;
-      margin-top: 4px;
-    }
-
-    .stage-dots {
-      display: flex;
-      gap: 5px;
-      margin-top: 7px;
-    }
-
-    .stage-dot {
-      height: 5px;
-      flex: 1;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.12);
-      transition: all 0.2s ease;
-    }
-
-    .stage-dot.active {
-      background: var(--dot-color, var(--accent));
-      box-shadow: 0 0 8px var(--dot-color, var(--accent));
-    }
-
-    /* MOUSE SILHOUETTE & CALLOUTS */
-    .mouse-centerpiece {
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 8px 20px;
-    }
-
-    .superlight-chassis {
-      width: 154px;
-      height: 256px;
-      background: linear-gradient(180deg, #202736 0%, #121722 55%, #0d111a 100%);
-      border: 1.5px solid rgba(255, 255, 255, 0.16);
-      border-radius: 72px 72px 62px 62px;
-      position: relative;
-      box-shadow:
-        0 28px 65px rgba(0, 0, 0, 0.75),
-        0 0 45px var(--stage-glow, rgba(0, 184, 252, 0.12)),
-        inset 0 1px 0 rgba(255, 255, 255, 0.15);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      transition: box-shadow 0.25s ease;
-    }
-
-    .mouse-top-shell {
-      width: 100%;
-      height: 98px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-      position: relative;
-    }
-
-    .m-btn-zone {
-      cursor: pointer;
-      position: relative;
-      transition: background 0.15s ease;
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      padding-top: 16px;
-    }
-
-    .m-btn-zone:hover,
-    .m-btn-zone.highlight {
-      background: rgba(0, 184, 252, 0.1);
-    }
-
-    .m-btn-left {
-      border-right: 1px solid rgba(255, 255, 255, 0.07);
-      border-top-left-radius: 70px;
-    }
-
-    .m-btn-right {
-      border-top-right-radius: 70px;
-    }
-
-    .m-btn-tag {
-      font-family: var(--font-mono);
-      font-size: 0.62rem;
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: rgba(0, 0, 0, 0.55);
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      color: var(--text-secondary);
-      pointer-events: none;
-    }
-
-    .m-btn-zone:hover .m-btn-tag,
-    .m-btn-zone.highlight .m-btn-tag {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    /* Scroll Wheel (G3) */
-    .m-wheel {
-      position: absolute;
-      top: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 18px;
-      height: 46px;
-      border-radius: 999px;
-      background: linear-gradient(180deg, #0b0e14 0%, #1c2432 50%, #0b0e14 100%);
-      border: 1.5px solid rgba(255, 255, 255, 0.28);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s ease;
-      z-index: 4;
-    }
-
-    .m-wheel:hover,
-    .m-wheel.highlight {
-      border-color: var(--accent);
-      box-shadow: 0 0 12px var(--accent-glow);
-    }
-
-    /* DPI Stage LED dot on mouse spine */
-    .m-dpi-led {
-      margin-top: 12px;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--led-color, #00b8fc);
-      box-shadow: 0 0 12px var(--led-color, #00b8fc);
-      transition: all 0.2s ease;
-    }
-
-    /* Side Buttons (G5 Forward, G4 Back) */
-    .m-side-buttons {
-      position: absolute;
-      left: -8px;
-      top: 86px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .m-side-btn {
-      width: 9px;
-      height: 30px;
-      background: #232c3d;
-      border: 1px solid rgba(255, 255, 255, 0.22);
-      border-radius: 4px 0 0 4px;
-      cursor: pointer;
-      position: relative;
-      transition: all 0.15s ease;
-    }
-
-    .m-side-btn:hover,
-    .m-side-btn.highlight {
-      background: var(--accent);
-      border-color: #fff;
-      box-shadow: 0 0 10px var(--accent);
-    }
-
-    .m-side-btn span {
-      position: absolute;
-      right: 14px;
-      top: 50%;
-      transform: translateY(-50%);
-      font-family: var(--font-mono);
-      font-size: 0.6rem;
-      font-weight: 700;
-      color: var(--text-secondary);
-      background: rgba(8, 11, 16, 0.85);
-      border: 1px solid var(--border);
-      padding: 1px 5px;
-      border-radius: 4px;
-      white-space: nowrap;
-    }
-
-    /* Center HERO 2 Optical Sensor Ring */
-    .m-sensor-ring {
-      margin-top: 22px;
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      border: 1px dashed rgba(0, 184, 252, 0.35);
-      display: grid;
-      place-items: center;
-      font-family: var(--font-mono);
-      font-size: 0.52rem;
-      color: var(--accent);
-      letter-spacing: 0.04em;
-      background: radial-gradient(circle, rgba(0, 184, 252, 0.1) 0%, transparent 70%);
-    }
-
-    /* Logitech G Emblem at palm */
-    .m-palm-logo {
-      margin-top: auto;
-      margin-bottom: 28px;
-      font-weight: 900;
-      font-size: 1.15rem;
-      color: rgba(255, 255, 255, 0.22);
-      letter-spacing: -0.05em;
-      text-shadow: 0 0 16px var(--led-color, rgba(0, 184, 252, 0.3));
-    }
-
-    /* BOTTOM INSPECTOR DOCK */
-    .dock {
-      height: 365px;
-      background: var(--bg-surface);
-      border-top: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      z-index: 15;
-      flex-shrink: 0;
-    }
-
-    .dock-nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 28px;
-      height: 48px;
-      border-bottom: 1px solid var(--border);
-      background: rgba(12, 16, 24, 0.92);
-      flex-shrink: 0;
-    }
-
-    .dock-tabs {
-      display: flex;
-      gap: 6px;
-      height: 100%;
-    }
-
-    .dock-tab {
-      background: transparent;
-      border: none;
-      color: var(--text-secondary);
-      font-size: 0.81rem;
-      font-weight: 600;
-      padding: 0 16px;
-      height: 100%;
-      cursor: pointer;
-      position: relative;
-      transition: color 0.15s ease;
-    }
-
-    .dock-tab:hover {
-      color: var(--text-primary);
-    }
-
-    .dock-tab.active {
-      color: var(--accent);
-    }
-
-    .dock-tab.active::after {
-      content: "";
-      position: absolute;
-      bottom: 0;
-      left: 12px;
-      right: 12px;
-      height: 2px;
-      border-radius: 2px;
-      background: var(--accent);
-      box-shadow: 0 0 10px var(--accent);
-    }
-
-    .dock-status {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .save-toast {
-      color: var(--green);
-      font-weight: 600;
-      opacity: 0;
-      transition: opacity 0.2s ease;
-    }
-
-    .save-toast.show {
-      opacity: 1;
-    }
-
-    .dock-content {
-      flex: 1;
-      padding: 20px 28px;
-      overflow-y: auto;
-      display: flex;
-      justify-content: center;
-    }
-
-    .panel {
-      width: 100%;
-      max-width: 1180px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-      gap: 20px;
-      align-items: start;
-    }
-
-    .module-card {
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 18px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .module-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .module-title {
-      font-size: 0.88rem;
-      font-weight: 700;
-      color: var(--text-primary);
-    }
-
-    .module-badge {
-      font-size: 0.72rem;
-      font-family: var(--font-mono);
-      padding: 3px 9px;
-      border-radius: 999px;
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .module-badge.green {
-      background: var(--green-soft);
-      color: var(--green);
-    }
-
-    .module-badge.amber {
-      background: var(--amber-soft);
-      color: var(--amber);
-    }
-
-    .module-desc {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-      line-height: 1.45;
-    }
-
-    /* 5-STAGE DPI MATRIX (MCHOSE / Corsair Web Hub style) */
-    .dpi-stages-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 8px;
-    }
-
-    .dpi-stage-card {
-      background: #101520;
-      border: 1px solid var(--border);
-      border-top: 3px solid var(--st-color, var(--accent));
-      border-radius: 9px;
-      padding: 10px 8px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 5px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      position: relative;
-    }
-
-    .dpi-stage-card:hover {
-      background: var(--bg-hover);
-      border-color: var(--border-strong);
-      border-top-color: var(--st-color, var(--accent));
-    }
-
-    .dpi-stage-card.active {
-      background: rgba(0, 184, 252, 0.1);
-      border-color: var(--st-color, var(--accent));
-      box-shadow: 0 0 16px rgba(0, 0, 0, 0.35), inset 0 0 12px rgba(0, 184, 252, 0.08);
-    }
-
-    .dpi-stage-card.disabled {
-      opacity: 0.38;
-      border-top-color: #4b5563;
-    }
-
-    .dpi-stage-card .st-head {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 0.64rem;
-      color: var(--text-muted);
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .dpi-stage-card .st-toggle {
-      width: 13px;
-      height: 13px;
-      border-radius: 50%;
-      border: 1.5px solid rgba(255, 255, 255, 0.25);
-      background: transparent;
-      cursor: pointer;
-      padding: 0;
-    }
-
-    .dpi-stage-card:not(.disabled) .st-toggle {
-      background: var(--st-color, var(--accent));
-      border-color: var(--st-color, var(--accent));
-    }
-
-    .dpi-stage-card .st-dpi {
-      font-family: var(--font-mono);
-      font-size: 0.96rem;
-      font-weight: 700;
-      color: var(--text-primary);
-    }
-
-    .dpi-stage-card .st-sub {
-      font-size: 0.61rem;
-      color: var(--text-secondary);
-      font-family: var(--font-mono);
-    }
-
-    /* SLIDERS & NUMERIC INPUTS */
-    .slider-block {
-      display: flex;
-      flex-direction: column;
-      gap: 7px;
-    }
-
-    .slider-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.78rem;
-    }
-
-    .slider-top span:first-child {
-      color: #d0d8e4;
-      font-weight: 500;
-    }
-
-    .num-input {
-      background: #0c1018;
-      border: 1px solid var(--border-strong);
-      color: var(--accent);
-      font-family: var(--font-mono);
-      font-size: 0.78rem;
-      font-weight: 700;
-      width: 78px;
-      padding: 3px 7px;
-      border-radius: 6px;
-      text-align: right;
-      outline: none;
-    }
-
-    .num-input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 8px var(--accent-soft);
-    }
-
-    input[type="range"] {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 100%;
-      height: 6px;
-      background: #0b0f17;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      outline: none;
-      cursor: pointer;
-    }
-
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 10px var(--accent-glow);
-      cursor: pointer;
-      transition: transform 0.1s ease;
-    }
-
-    input[type="range"]::-webkit-slider-thumb:hover {
-      transform: scale(1.15);
-    }
-
-    /* PRESET / OPTION BUTTON GRID */
-    .preset-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-      gap: 7px;
-    }
-
-    .preset-btn {
-      background: #101520;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 9px;
-      color: #c9d3e0;
-      font-size: 0.75rem;
-      font-weight: 600;
-      cursor: pointer;
-      text-align: center;
-      transition: all 0.15s ease;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-    }
-
-    .preset-btn small {
-      font-size: 0.62rem;
-      font-family: var(--font-mono);
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    .preset-btn:hover {
-      background: var(--bg-hover);
-      border-color: var(--border-strong);
-    }
-
-    .preset-btn.active {
-      background: var(--accent-soft);
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .preset-btn.active small {
-      color: var(--accent);
-    }
-
-    /* TOGGLE SWITCH */
-    .toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 3px 0;
-    }
-
-    .toggle-label {
-      font-size: 0.78rem;
-      color: #d0d8e4;
-      font-weight: 500;
-    }
-
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 40px;
-      height: 22px;
-      flex-shrink: 0;
-    }
-
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-
-    .switch-slider {
-      position: absolute;
-      cursor: pointer;
-      inset: 0;
-      background: #0b0f17;
-      border: 1px solid var(--border-strong);
-      border-radius: 999px;
-      transition: 0.2s;
-    }
-
-    .switch-slider::before {
-      position: absolute;
-      content: "";
-      height: 14px;
-      width: 14px;
-      left: 3px;
-      bottom: 3px;
-      background: #8b96a8;
-      border-radius: 50%;
-      transition: 0.2s;
-    }
-
-    .switch input:checked + .switch-slider {
-      background: var(--accent-soft);
-      border-color: var(--accent);
-    }
-
-    .switch input:checked + .switch-slider::before {
-      transform: translateX(18px);
-      background: var(--accent);
-      box-shadow: 0 0 8px var(--accent);
-    }
-
-    /* BUTTON ASSIGNMENT MATRIX */
-    .remap-list {
-      display: flex;
-      flex-direction: column;
-      gap: 7px;
-    }
-
-    .remap-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: #101520;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 7px 11px;
-      gap: 10px;
-      transition: border-color 0.15s ease;
-    }
-
-    .remap-row:hover,
-    .remap-row.highlight {
-      border-color: var(--accent);
-    }
-
-    .remap-key {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.77rem;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .remap-key .k-badge {
-      font-family: var(--font-mono);
-      font-size: 0.68rem;
-      padding: 2px 6px;
-      border-radius: 5px;
-      background: var(--bg-elevated);
-      border: 1px solid var(--border-strong);
-      color: var(--accent);
-    }
-
-    .remap-select {
-      background: #0b0f17;
-      color: var(--text-primary);
-      border: 1px solid var(--border-strong);
-      border-radius: 6px;
-      padding: 5px 9px;
-      font-size: 0.75rem;
-      font-family: var(--font-sans);
-      font-weight: 500;
-      outline: none;
-      cursor: pointer;
-      min-width: 175px;
-    }
-
-    .remap-select:focus {
-      border-color: var(--accent);
-    }
-
-    /* POLLING RATE TEST PAD */
-    .hz-test-pad {
-      height: 118px;
-      border-radius: 10px;
-      background: radial-gradient(circle at center, rgba(0, 184, 252, 0.08) 0%, #0b0f17 75%);
-      border: 1px dashed rgba(0, 184, 252, 0.35);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      cursor: crosshair;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .hz-test-pad .hz-live {
-      font-family: var(--font-mono);
-      font-size: 1.55rem;
-      font-weight: 800;
-      color: var(--accent);
-    }
-
-    .hz-test-pad .hz-hint {
-      font-size: 0.72rem;
-      color: var(--text-secondary);
-    }
-
-    /* ONBOARD SLOTS LIST */
-    .slot-list {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 8px;
-    }
-
-    .slot-card {
-      background: #101520;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      align-items: center;
-      text-align: center;
-    }
-
-    .slot-card.enabled {
-      border-color: rgba(0, 230, 118, 0.4);
-      background: rgba(0, 230, 118, 0.05);
-    }
-
-    /* SLIDE-OVER RPC INSPECTOR DRAWER */
-    .drawer {
-      position: fixed;
-      top: 62px;
-      right: 0;
-      bottom: 0;
-      width: 460px;
-      background: rgba(11, 15, 23, 0.97);
-      backdrop-filter: blur(20px);
-      border-left: 1px solid var(--border-strong);
-      z-index: 50;
-      padding: 18px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      transform: translateX(100%);
-      transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .drawer.open {
-      transform: translateX(0);
-    }
-
-    .log-feed {
-      flex: 1;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      font-family: var(--font-mono);
-      font-size: 0.69rem;
-    }
-
-    .log-card {
-      background: #070a0f;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 10px;
-      line-height: 1.45;
-    }
-
-    .log-card .tx {
-      color: var(--accent);
-      word-break: break-all;
-    }
-
-    .log-card .rx {
-      color: var(--green);
-      word-break: break-all;
-    }
-
-    .hidden {
-      display: none !important;
-    }
-  </style>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' http://127.0.0.1:* ws://127.0.0.1:* data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' http://127.0.0.1:* data: blob:; font-src 'self' data:;" />
+  <title>Logitech Web Driver · Local Hardware Instrument</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("lgwd_theme") || "ice";
+        document.documentElement.setAttribute("data-interface-theme", saved);
+        if (localStorage.getItem("lgwd_reduced_motion") === "1") {
+          document.documentElement.classList.add("reduce-interface-motion");
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
-  <!-- TOP NAVIGATION BAR -->
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-logo">G</div>
-      <div>
-        <span class="brand-title">Logitech G Web Hub</span>
-        <span class="brand-sub">Zero-Cloud Hardware Driver</span>
-      </div>
-    </div>
-
-    <!-- Connected Device Switcher -->
-    <div class="device-switcher" id="deviceSwitcher">
-      <button class="dev-pill active">
-        <span class="dot"></span>
-        <span id="pillDevName">PRO X SUPERLIGHT 2</span>
-        <span class="bat-mini" id="pillDevBat">44%</span>
-      </button>
-    </div>
-
-    <!-- Right Status & Actions -->
-    <div class="top-actions">
-      <div class="status-chip" id="agentChip">
-        <span class="pulse"></span>
-        <span id="agentChipLabel">lghub_agent • Online</span>
-      </div>
-      <a href="/legacy.html" class="btn-ghost" title="Open original debloated G HUB React UI">Legacy G HUB</a>
-      <button class="btn-ghost" id="btnToggleDrawer" title="Inspect live lghub_agent JSON RPC traffic">&lt;/&gt; RPC Inspector</button>
-    </div>
-  </header>
-
-  <div class="workspace">
-    <!-- HERO INTERACTIVE HARDWARE STAGE -->
-    <section class="stage">
-      <div class="stage-meta">
-        <span>Device <strong id="metaName">PRO X SUPERLIGHT 2</strong></span>
-        <span>Sensor <strong id="metaSensor">HERO 2 (44K)</strong></span>
-        <span>PID <strong id="metaPid">0x40A9</strong></span>
-        <span>Firmware <strong id="metaFw">32.5.29</strong></span>
-        <span>Link <strong id="metaLink" style="color:var(--accent);">LIGHTSPEED</strong></span>
+  <div id="app-shell" class="om-shell">
+    <!-- Left Collapsible Sidebar -->
+    <aside class="om-sidebar" aria-label="Main navigation">
+      <div class="om-sidebar-head">
+        <a href="#device" class="om-brand" id="brand-home-link">
+          <span class="om-brand-mark" aria-hidden="true">G</span>
+          <span>Logitech Web</span>
+          <span class="om-brand-badge">LOCAL</span>
+        </a>
+        <button type="button" class="om-icon-btn" id="btn-collapse-sidebar" title="Toggle sidebar" aria-label="Toggle sidebar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>
+        </button>
       </div>
 
-      <div class="mouse-stage">
-        <!-- LEFT TELEMETRY PILLS -->
-        <div class="mouse-side-col">
-          <div class="telemetry-card">
-            <div class="t-label">
-              <span>Active Sensitivity</span>
-              <span id="stageIndexBadge" style="color:var(--accent); font-family:var(--font-mono);">STAGE 1</span>
-            </div>
-            <div class="t-val">
-              <span id="stageDpiVal">800</span>
-              <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:600;">DPI</span>
-            </div>
-            <div class="stage-dots" id="stageDotsRow"></div>
-          </div>
+      <nav class="om-nav" aria-label="Primary pages">
+        <button type="button" class="om-nav-link is-active" data-nav-page="device">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg>
+          <span>Device</span>
+        </button>
+        <button type="button" class="om-nav-link" data-nav-page="hardware-test">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <span>Hardware test</span>
+        </button>
+        <button type="button" class="om-nav-link" data-nav-page="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Settings</span>
+          <span class="om-nav-badge" id="nav-theme-badge">Ice</span>
+        </button>
+      </nav>
 
-          <div class="telemetry-card">
-            <div class="t-label">
-              <span>LIGHTSPEED Polling</span>
-              <span id="stageLatencyBadge" style="color:var(--green); font-family:var(--font-mono);">0.50 ms</span>
-            </div>
-            <div class="t-val">
-              <span id="stagePollVal">2000</span>
-              <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:600;">Hz</span>
-            </div>
-            <div class="t-sub" id="stageWiredPollSub">Wired USB: 1000 Hz</div>
-          </div>
+      <!-- Connected Devices Switcher -->
+      <section class="om-switcher" aria-label="Your devices">
+        <div class="om-switcher-head">
+          <span class="om-section-label">Your devices</span>
+          <button type="button" class="om-icon-btn" id="btn-refresh-devices" title="Rescan hardware" aria-label="Rescan hardware">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+          </button>
         </div>
-
-        <!-- CENTER INTERACTIVE SUPERLIGHT 2 SILHOUETTE -->
-        <div class="mouse-centerpiece">
-          <div class="superlight-chassis" id="mouseChassis">
-            <!-- Side Thumb Buttons (G5 Forward, G4 Back) -->
-            <div class="m-side-buttons">
-              <div class="m-side-btn" data-slot="g5" title="G5 — Forward Button">
-                <span>G5</span>
-              </div>
-              <div class="m-side-btn" data-slot="g4" title="G4 — Back Button">
-                <span>G4</span>
-              </div>
-            </div>
-
-            <!-- Left (G1) & Right (G2) Primary Triggers + Scroll Wheel (G3) -->
-            <div class="mouse-top-shell">
-              <div class="m-btn-zone m-btn-left" data-slot="g1" title="G1 — Primary Click">
-                <span class="m-btn-tag">G1</span>
-              </div>
-              <div class="m-btn-zone m-btn-right" data-slot="g2" title="G2 — Secondary Click">
-                <span class="m-btn-tag">G2</span>
-              </div>
-              <div class="m-wheel" data-slot="g3" title="G3 — Middle Click / Scroll Wheel">
-                <span style="font-family:var(--font-mono); font-size:0.52rem; color:#9aa6b8; font-weight:700;">G3</span>
-              </div>
-            </div>
-
-            <!-- Active Stage LED Indicator -->
-            <div class="m-dpi-led" id="mouseLedDot" title="Active DPI Stage LED"></div>
-
-            <!-- HERO 2 Sensor Ring -->
-            <div class="m-sensor-ring" title="HERO 2 44,000 DPI Optical Sensor">
-              HERO 2
-            </div>
-
-            <!-- Palm G Logo -->
-            <div class="m-palm-logo">G</div>
-          </div>
+        <div class="om-device-list" id="sidebar-device-list">
+          <!-- Populated dynamically -->
         </div>
+      </section>
 
-        <!-- RIGHT TELEMETRY PILLS -->
-        <div class="mouse-side-col">
-          <div class="telemetry-card">
-            <div class="t-label">
-              <span>Battery &amp; Power</span>
-              <span id="stageChargeState" style="color:var(--green);">DISCHARGING</span>
-            </div>
-            <div class="t-val">
-              <span id="stageBatVal">44%</span>
-            </div>
-            <div style="width:100%; height:5px; background:#0b0f17; border-radius:999px; margin-top:7px; overflow:hidden;">
-              <div id="stageBatBar" style="height:100%; width:44%; background:linear-gradient(90deg, #00b8fc, #00e676); border-radius:999px; transition:width 0.3s ease;"></div>
-            </div>
-          </div>
-
-          <div class="telemetry-card">
-            <div class="t-label">
-              <span>Switches &amp; Lift-Off</span>
-              <span id="stageLodBadge" style="color:var(--amber); font-family:var(--font-mono);">LOD MED</span>
-            </div>
-            <div class="t-val" style="font-size:1.02rem;" id="stageSwitchMode">
-              LIGHTFORCE Hybrid
-            </div>
-            <div class="t-sub" id="stageBhopSub">BHOP Filter: Off</div>
-          </div>
+      <!-- Sidebar Footer: Local Agent Bridge Status & Debloat -->
+      <footer class="om-sidebar-foot">
+        <button type="button" class="om-bridge-pill is-live" id="btn-bridge-status" title="Local lghub_agent.exe bridge status">
+          <span class="om-dot is-live" id="bridge-dot"></span>
+          <span id="bridge-label">lghub_agent online</span>
+          <span class="om-bridge-pill-meta" id="bridge-port">:9010</span>
+        </button>
+        <div class="om-sidebar-meta">
+          <span>Any-browser local driver</span>
+          <a href="/legacy-ghub.html" target="_blank" rel="noreferrer" title="Open de-bloated original G HUB bundle" style="color:var(--text-2);text-decoration:underline;text-underline-offset:3px">Legacy UI</a>
         </div>
-      </div>
-    </section>
+      </footer>
+    </aside>
 
-    <!-- CONTEXTUAL BOTTOM INSPECTOR DOCK -->
-    <section class="dock">
-      <div class="dock-nav">
-        <div class="dock-tabs" id="dockTabs">
-          <button class="dock-tab active" data-panel="panel-dpi">DPI &amp; Stages</button>
-          <button class="dock-tab" data-panel="panel-polling">Polling &amp; Sensor</button>
-          <button class="dock-tab" data-panel="panel-buttons">Buttons &amp; Switches</button>
-          <button class="dock-tab" data-panel="panel-onboard">Onboard Memory</button>
-          <button class="dock-tab" data-panel="panel-system">System &amp; Privacy</button>
-        </div>
-        <div class="dock-status">
-          <span id="saveToast" class="save-toast">✓ Synced to Hardware</span>
-          <span>Zero Cloud • 127.0.0.1:1133</span>
-        </div>
-      </div>
+    <!-- Main Instrument Canvas -->
+    <div class="om-canvas">
+      <!-- OpenMouse Signature Top-Right ASCII Glow Field -->
+      <pre class="om-ascii" id="om-ascii" aria-hidden="true"></pre>
 
-      <div class="dock-content">
-        <!-- PANEL 1: DPI & STAGES (MCHOSE / Corsair Web Hub style) -->
-        <div id="panel-dpi" class="panel">
-          <div class="module-card">
-            <div class="module-header">
-              <span class="module-title">HERO 2 DPI Stages (Click to Activate)</span>
-              <span class="module-badge" id="badgeActiveStage">Stage 1 • 800 DPI</span>
-            </div>
-            <p class="module-desc">
-              Click any stage card to switch active sensitivity immediately. Click the top-right dot on a stage to enable or disable it in your cycle.
-            </p>
-            <div class="dpi-stages-grid" id="dpiStagesGrid"></div>
-            <div class="preset-grid" id="quickDpiPresets">
-              <button class="preset-btn" data-quick-dpi="400">400</button>
-              <button class="preset-btn" data-quick-dpi="800">800</button>
-              <button class="preset-btn" data-quick-dpi="1200">1200</button>
-              <button class="preset-btn" data-quick-dpi="1600">1600</button>
-              <button class="preset-btn" data-quick-dpi="2400">2400</button>
-              <button class="preset-btn" data-quick-dpi="3200">3200</button>
-            </div>
-          </div>
-
-          <div class="module-card">
-            <div class="module-header">
-              <span class="module-title">Stage Fine Tuning &amp; Lift-Off (LOD)</span>
-              <span class="module-badge amber" id="badgeEditingStage">Editing Stage 1</span>
-            </div>
-
-            <div class="slider-block">
-              <div class="slider-top">
-                <span id="lblDpiPrimary">X / Y Sensitivity (100 – 44,000 DPI)</span>
-                <input type="number" id="inpDpiX" class="num-input" min="100" max="44000" step="50" value="800" />
+      <main class="om-main">
+        <!-- ==================================================================
+             PAGE 1: DEVICE WORKSPACE
+             ================================================================== -->
+        <section id="page-device" class="om-page">
+          <div class="om-device-layout">
+            <!-- Left Sticky Device Rail -->
+            <aside class="om-device-rail">
+              <div class="om-crumb">
+                <span>Devices</span>
+                <span>/</span>
+                <strong id="rail-crumb-name">PRO X SUPERLIGHT 2</strong>
               </div>
-              <input type="range" id="rngDpiX" min="100" max="44000" step="50" value="800" />
-            </div>
 
-            <div class="toggle-row">
-              <span class="toggle-label">Independent X / Y Axis Sensitivity (Asymmetric)</span>
-              <label class="switch">
-                <input type="checkbox" id="chkAsymmetric" />
-                <span class="switch-slider"></span>
-              </label>
-            </div>
-
-            <div class="slider-block hidden" id="blockDpiY">
-              <div class="slider-top">
-                <span>Vertical Y-Axis Sensitivity (DPI)</span>
-                <input type="number" id="inpDpiY" class="num-input" min="100" max="44000" step="50" value="800" />
-              </div>
-              <input type="range" id="rngDpiY" min="100" max="44000" step="50" value="800" />
-            </div>
-
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:2px;">
-              <span style="font-size:0.77rem; color:#d0d8e4; font-weight:500;">Lift-Off Distance (LOD)</span>
-              <div style="display:flex; gap:6px;" id="lodBtnGroup">
-                <button class="preset-btn" data-lod="1" style="padding:5px 12px;">Low</button>
-                <button class="preset-btn active" data-lod="2" style="padding:5px 12px;">Medium</button>
-                <button class="preset-btn" data-lod="3" style="padding:5px 12px;">High</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- PANEL 2: POLLING & SENSOR -->
-        <div id="panel-polling" class="panel hidden">
-          <div class="module-card">
-            <div class="module-header">
-              <span class="module-title">LIGHTSPEED Wireless Report Rate</span>
-              <span class="module-badge green" id="badgeWirelessHz">2000 Hz (0.50 ms)</span>
-            </div>
-            <p class="module-desc">
-              Configure LIGHTSPEED wireless polling frequency up to 8000 Hz (0.125 ms) and USB wired report rate.
-            </p>
-            <div class="preset-grid" id="wirelessHzGrid">
-              <button class="preset-btn" data-whz="125">125 Hz<small>8.00 ms</small></button>
-              <button class="preset-btn" data-whz="250">250 Hz<small>4.00 ms</small></button>
-              <button class="preset-btn" data-whz="500">500 Hz<small>2.00 ms</small></button>
-              <button class="preset-btn" data-whz="1000">1000 Hz<small>1.00 ms</small></button>
-              <button class="preset-btn active" data-whz="2000">2000 Hz<small>0.50 ms</small></button>
-              <button class="preset-btn" data-whz="4000">4000 Hz<small>0.25 ms</small></button>
-              <button class="preset-btn" data-whz="8000">8000 Hz<small>0.125 ms</small></button>
-            </div>
-
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:4px;">
-              <span style="font-size:0.77rem; color:#d0d8e4; font-weight:500;">Wired USB Report Rate</span>
-              <div style="display:flex; gap:6px;" id="wiredHzGrid">
-                <button class="preset-btn" data-uhz="125" style="padding:5px 10px;">125 Hz</button>
-                <button class="preset-btn" data-uhz="250" style="padding:5px 10px;">250 Hz</button>
-                <button class="preset-btn" data-uhz="500" style="padding:5px 10px;">500 Hz</button>
-                <button class="preset-btn active" data-uhz="1000" style="padding:5px 10px;">1000 Hz</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="module-card">
-            <div class="module-header">
-              <span class="module-title">Live Polling Rate &amp; Sensor Benchmark</span>
-              <span class="module-badge" id="badgePeakHz">Peak: 0 Hz</span>
-            </div>
-            <p class="module-desc">
-              Move your mouse rapidly in circles inside the pad below to measure live input reporting rate and event stability.
-            </p>
-            <div class="hz-test-pad" id="hzTestPad">
-              <div class="hz-live" id="hzLiveReadout">Move Mouse Here</div>
-              <div class="hz-hint" id="hzSubReadout">0 events/sec • Click pad to reset peak</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- PANEL 3: BUTTONS & SWITCHES -->
-        <div id="panel-buttons" class="panel hidden">
-          <div class="module-card">
-            <div class="module-header">
-              <span class="module-title">5-Button Hardware Assignments</span>
-              <div style="display:flex; gap:6px;">
-                <button class="btn-ghost accent" id="btnLayerNormal" style="padding:4px 10px; font-size:0.71rem;">Standard</button>
-                <button class="btn-ghost" id="btnLayerGshift" style="padding:4px 10px; font-size:0.71rem;">G-Shift Layer</button>
-              </div>
-            </div>
-            <div class="remap-list" id="remapList"></div>
-          </div>
-
-          <div class="module-card">
-            <div class="module-header">
-              <span class="module-title">LIGHTFORCE Switches &amp; Scroll Wheel BHOP</span>
-              <span class="module-badge" id="badgeSwitchMode">Hybrid</span>
-            </div>
-
-            <div>
-              <div style="font-size:0.76rem; color:#d0d8e4; font-weight:500; margin-bottom:7px;">
-                LIGHTFORCE Optical-Mechanical Switch Mode
-              </div>
-              <div class="preset-grid" style="grid-template-columns: 1fr 1fr;" id="switchModeGrid">
-                <button class="preset-btn active" data-hybrid="POWER_SAVE">
-                  ⚡ Hybrid Mode<small>Crisp Tactile + Battery Save</small>
-                </button>
-                <button class="preset-btn" data-hybrid="LOW_LATENCY">
-                  🔥 Optical Only<small>Maximum Speed</small>
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <div style="font-size:0.76rem; color:#d0d8e4; font-weight:500; margin-bottom:7px;">
-                Gaming Surface Sensor Tuning
-              </div>
-              <div class="preset-grid" style="grid-template-columns: repeat(3, 1fr);" id="surfaceModeGrid">
-                <button class="preset-btn active" data-surface="AUTOMATIC_DETECTION_MODE">Auto</button>
-                <button class="preset-btn" data-surface="LOD_MODE">On</button>
-                <button class="preset-btn" data-surface="COMPATIBILITY_MODE">Off</button>
-              </div>
-            </div>
-
-            <div style="border-top:1px solid var(--border); padding-top:10px; display:flex; flex-direction:column; gap:8px;">
-              <div class="toggle-row">
-                <span class="toggle-label">BHOP Scroll Wheel Debounce Filter</span>
-                <label class="switch">
-                  <input type="checkbox" id="chkBhop" />
-                  <span class="switch-slider"></span>
-                </label>
-              </div>
-              <div class="slider-block" id="bhopSliderBlock">
-                <div class="slider-top">
-                  <span>Scroll Step Protection Timeout</span>
-                  <span style="font-family:var(--font-mono); color:var(--accent); font-weight:700;" id="valBhopMs">100 ms</span>
+              <div class="om-device-title">
+                <h1 id="rail-device-name">PRO X SUPERLIGHT 2</h1>
+                <div class="om-status-line">
+                  <span class="om-dot is-live" id="rail-status-dot"></span>
+                  <span id="rail-status-text">Connected · LIGHTSPEED</span>
                 </div>
-                <input type="range" id="rngBhopMs" min="100" max="1000" step="100" value="100" />
+              </div>
+
+              <figure class="om-device-stage">
+                <img id="rail-device-img" src="/devices/pro_x_2_wireless_mouse.png" alt="Logitech PRO X SUPERLIGHT 2" />
+                <figcaption class="om-device-stage-badge" id="rail-stage-badge">
+                  <span class="om-dot is-live" style="width:6px;height:6px"></span>
+                  <span id="rail-stage-dpi">1600 DPI · 2000 Hz</span>
+                </figcaption>
+              </figure>
+
+              <div class="om-rail-facts">
+                <div class="om-rail-fact">
+                  <span>Sensor</span>
+                  <strong id="rail-fact-sensor">HERO 2 · 44K</strong>
+                </div>
+                <div class="om-rail-fact">
+                  <span>Firmware</span>
+                  <strong id="rail-fact-fw">32.5.29</strong>
+                </div>
+                <div class="om-rail-fact">
+                  <span>Switches</span>
+                  <strong id="rail-fact-switches">LIGHTFORCE Hybrid</strong>
+                </div>
+                <div class="om-rail-fact">
+                  <span>Firewall</span>
+                  <strong id="rail-fact-firewall" style="color:var(--ok)">0 cloud calls</strong>
+                </div>
+              </div>
+
+              <div class="om-rail-actions">
+                <button type="button" class="om-btn is-sm" id="btn-export-json">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Export
+                </button>
+                <button type="button" class="om-btn is-sm" id="btn-import-json">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  Import
+                </button>
+                <input type="file" id="input-import-json" accept="application/json" hidden />
+                <button type="button" class="om-btn is-sm is-wide" id="btn-rail-hwtest">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                  Run hardware diagnostics
+                </button>
+              </div>
+            </aside>
+
+            <!-- Right Tabbed Workspace -->
+            <div class="om-device-work">
+              <div class="om-tabs-bar">
+                <div class="om-tabs" role="tablist" aria-label="Device configuration sections">
+                  <button type="button" class="om-tab is-active" role="tab" aria-selected="true" data-device-tab="overview">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                    Overview
+                  </button>
+                  <button type="button" class="om-tab" role="tab" aria-selected="false" data-device-tab="performance">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+                    Performance
+                  </button>
+                  <button type="button" class="om-tab" role="tab" aria-selected="false" data-device-tab="buttons">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 2v8"/><path d="M5 10h14"/></svg>
+                    Buttons
+                  </button>
+                  <button type="button" class="om-tab" role="tab" aria-selected="false" data-device-tab="onboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
+                    Onboard
+                  </button>
+                  <button type="button" class="om-tab" role="tab" aria-selected="false" data-device-tab="advanced">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+                    Advanced &amp; Debloat
+                  </button>
+                </div>
+
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="om-badge is-ok" id="badge-sync-state">Synced to mouse</span>
+                </div>
+              </div>
+
+              <!-- ============================================================
+                   TAB 1: OVERVIEW (DeviceHero.tsx style)
+                   ============================================================ -->
+              <div id="tab-overview" class="device-tab-pane">
+                <div style="display:grid;gap:16px">
+                  <!-- Current Setup Lit Panel -->
+                  <section class="om-panel is-lit om-setup" aria-labelledby="setup-heading">
+                    <div class="om-setup-head">
+                      <h2 id="setup-heading">Current setup</h2>
+                      <span class="om-badge is-accent" id="overview-profile-badge">Desktop · Default</span>
+                    </div>
+
+                    <div class="om-setup-grid">
+                      <div class="om-stat">
+                        <span class="om-label">Sensitivity</span>
+                        <div class="om-fig"><span id="ov-dpi-val">1600</span><span class="om-unit">DPI</span></div>
+                        <span class="om-meta" id="ov-dpi-stage-meta">Stage 1 of 4 · Symmetric</span>
+                      </div>
+                      <div class="om-stat">
+                        <span class="om-label">Polling rate</span>
+                        <div class="om-fig"><span id="ov-rate-val">2000</span><span class="om-unit">Hz</span></div>
+                        <span class="om-meta" id="ov-rate-meta">0.50 ms · Up to 8,000 Hz</span>
+                      </div>
+                      <div class="om-stat">
+                        <span class="om-label">Battery</span>
+                        <div class="om-fig"><span id="ov-bat-val">44</span><span class="om-unit">%</span></div>
+                        <span class="om-meta" id="ov-bat-hours">~24 hr left at 2,000 Hz</span>
+                      </div>
+                      <div class="om-stat">
+                        <span class="om-label">Control mode</span>
+                        <div class="om-fig" style="font-size:21px;padding-top:4px" id="ov-mode-val">Host driver</div>
+                        <span class="om-meta" id="ov-mode-meta">LIGHTFORCE Hybrid</span>
+                      </div>
+                    </div>
+
+                    <div class="om-setup-stages">
+                      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                        <span class="om-label">Active DPI stage</span>
+                        <div class="om-chips" id="ov-stage-chips">
+                          <!-- Populated dynamically -->
+                        </div>
+                      </div>
+                      <button type="button" class="om-btn is-sm" data-goto-tab="performance">
+                        Tune sensitivity &amp; polling →
+                      </button>
+                    </div>
+                  </section>
+
+                  <!-- Battery History Sparkline + Hardware Details Grid -->
+                  <div class="om-overview-grid">
+                    <!-- Battery Over Time Panel -->
+                    <section class="om-panel om-battery" aria-labelledby="battery-heading">
+                      <div class="om-battery-head">
+                        <div class="om-battery-title">
+                          <h2 id="battery-heading">Battery &amp; power budget</h2>
+                          <span class="om-meta" id="bat-panel-sub">Real-time telemetry · Runtime scaled by polling rate</span>
+                        </div>
+                        <div class="om-battery-fig">
+                          <span class="om-badge" id="bat-state-badge">Discharging</span>
+                        </div>
+                      </div>
+
+                      <svg class="om-battery-chart" id="bat-sparkline-svg" viewBox="0 0 420 92" preserveAspectRatio="none">
+                        <defs>
+                          <linearGradient id="om-battery-grad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.32" />
+                            <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.0" />
+                          </linearGradient>
+                        </defs>
+                        <g class="om-battery-grid">
+                          <line x1="0" y1="14" x2="420" y2="14" />
+                          <line x1="0" y1="46" x2="420" y2="46" />
+                          <line x1="0" y1="78" x2="420" y2="78" />
+                        </g>
+                        <path class="om-battery-area" id="bat-spark-area" d="" />
+                        <path class="om-battery-line" id="bat-spark-line" d="" />
+                        <circle class="om-battery-dot" id="bat-spark-dot" cx="414" cy="46" r="3.5" />
+                      </svg>
+
+                      <div class="om-battery-axis">
+                        <span id="bat-axis-start">Session history</span>
+                        <span>Estimated remaining runtime by polling rate</span>
+                      </div>
+
+                      <div class="om-battery-rates" id="bat-rate-estimates">
+                        <!-- Populated with 1000Hz / 2000Hz / 4000Hz / 8000Hz runtime pills -->
+                      </div>
+                    </section>
+
+                    <!-- Firmware & Hardware Summary Panel -->
+                    <section class="om-panel setting-card" aria-labelledby="fw-heading">
+                      <div class="setting-heading">
+                        <div class="setting-heading-title">
+                          <span class="card-glyph">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M9 1v3"/><path d="M15 1v3"/><path d="M9 20v3"/><path d="M15 20v3"/><path d="M20 9h3"/><path d="M20 14h3"/><path d="M1 9h3"/><path d="M1 14h3"/></svg>
+                          </span>
+                          <h2 id="fw-heading">Hardware &amp; firmware</h2>
+                        </div>
+                        <span class="om-badge is-ok">Up to date</span>
+                      </div>
+
+                      <div style="display:grid;gap:0">
+                        <div class="setting-row" style="min-height:38px;padding-block:7px">
+                          <span class="om-label">Installed firmware</span>
+                          <strong class="num" id="fw-card-version">MPM32 · 32.5.29</strong>
+                        </div>
+                        <div class="setting-row" style="min-height:38px;padding-block:7px">
+                          <span class="om-label">Bootloader entity</span>
+                          <strong class="num" id="fw-card-bl">BL171 · 71.0.12</strong>
+                        </div>
+                        <div class="setting-row" style="min-height:38px;padding-block:7px">
+                          <span class="om-label">USB Product ID</span>
+                          <strong class="num" id="fw-card-pid">0x046D : 0x40A9</strong>
+                        </div>
+                        <div class="setting-row" style="min-height:38px;padding-block:7px">
+                          <span class="om-label">Unit serial</span>
+                          <strong class="num" id="fw-card-serial">1757800241</strong>
+                        </div>
+                        <div class="setting-row" style="min-height:38px;padding-block:7px">
+                          <span class="om-label">Browser compatibility</span>
+                          <strong style="color:var(--accent)">Any browser (Local HTTP/WS)</strong>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ============================================================
+                   TAB 2: PERFORMANCE (DpiCard.tsx + PerformanceCards.tsx)
+                   ============================================================ -->
+              <div id="tab-performance" class="device-tab-pane" hidden>
+                <div style="display:grid;gap:16px">
+                  <!-- Sensitivity & Lift-off Distance Split Card -->
+                  <section class="setting-card" id="dpi-card">
+                    <div class="dpi-card-split">
+                      <div class="dpi-card-main">
+                        <div class="dpi-card-head">
+                          <div>
+                            <div class="setting-heading-title">
+                              <span class="card-glyph">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                              </span>
+                              <div>
+                                <h3>Sensitivity (DPI)</h3>
+                                <p class="setting-note">HERO 2 sensor · 100 – 44,000 DPI in 50 DPI steps · Independent X/Y axis lock</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style="display:flex;align-items:center;gap:12px">
+                            <output id="dpi-output" class="dpi-readout-big">1600 <span class="om-unit">DPI</span></output>
+                            <div class="segmented" role="group" aria-label="DPI view mode">
+                              <button type="button" class="active" data-dpi-view="stages">Stages</button>
+                              <button type="button" data-dpi-view="single">Single</button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="dpi-editor" id="dpi-stage-rows">
+                          <!-- Populated dynamically with 5 stage rows -->
+                        </div>
+                      </div>
+
+                      <!-- Side Column: Lift-off Distance & DPI Presets -->
+                      <div class="dpi-card-lift">
+                        <div class="setting-heading-title">
+                          <span class="card-glyph">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m18 15-6-6-6 6"/><path d="M4 20h16"/></svg>
+                          </span>
+                          <div>
+                            <h3>Lift-off distance</h3>
+                            <p class="setting-note">Tracking cutoff height for the active stage</p>
+                          </div>
+                        </div>
+
+                        <div class="segmented" id="lod-segmented" role="radiogroup" aria-label="Lift-off distance" style="width:100%;display:grid;grid-template-columns:repeat(3,1fr)">
+                          <button type="button" data-lod="LOW">Low</button>
+                          <button type="button" class="active" data-lod="MEDIUM">Medium</button>
+                          <button type="button" data-lod="HIGH">High</button>
+                        </div>
+
+                        <div style="border-top:1px solid var(--line-1);padding-top:12px;display:grid;gap:8px">
+                          <span class="om-label">Quick stage presets</span>
+                          <div style="display:flex;flex-wrap:wrap;gap:5px">
+                            <button type="button" class="om-btn is-sm" data-dpi-preset="400,800,1600,3200">Pro FPS</button>
+                            <button type="button" class="om-btn is-sm" data-dpi-preset="800,1600,2400,3200,6400">Balanced</button>
+                            <button type="button" class="om-btn is-sm" data-dpi-preset="1600">1600 Only</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <!-- Report Frequency (Polling Rate) Bar-Tower Card -->
+                  <section class="setting-card" id="polling-card">
+                    <div class="setting-heading">
+                      <div class="setting-heading-title">
+                        <span class="card-glyph">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                        </span>
+                        <div>
+                          <h3>Report frequency (Polling rate)</h3>
+                          <p class="setting-note">Higher polling rates reduce click and motion latency at the cost of higher wireless battery draw.</p>
+                        </div>
+                      </div>
+                      <span class="om-badge is-accent" id="polling-active-badge">2000 Hz · 0.50 ms</span>
+                    </div>
+
+                    <div style="display:grid;gap:14px">
+                      <div class="rate-group">
+                        <div class="rate-group-head">
+                          <span class="rate-group-label">LIGHTSPEED Wireless rate</span>
+                          <span class="rate-group-sub" id="wireless-rate-sub">~54h full charge · ~24h left at 44%</span>
+                        </div>
+                        <div class="rate-slider-buttons" id="wireless-rate-buttons" role="radiogroup" aria-label="Wireless polling rate">
+                          <!-- Populated dynamically: 125..8000 Hz bar buttons -->
+                        </div>
+                      </div>
+
+                      <div class="rate-group">
+                        <div class="rate-group-head">
+                          <span class="rate-group-label">USB Wired rate</span>
+                          <span class="rate-group-sub" id="wired-rate-sub">1000 Hz (1.00 ms)</span>
+                        </div>
+                        <div class="rate-slider-buttons" id="wired-rate-buttons" role="radiogroup" aria-label="Wired polling rate">
+                          <!-- Populated dynamically: 125..1000 Hz bar buttons -->
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <!-- Gaming Surface Tracking & BHOP Filter Row -->
+                  <div class="perf-grid-2">
+                    <section class="setting-card">
+                      <div class="setting-heading">
+                        <div class="setting-heading-title">
+                          <span class="card-glyph">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M2 12h20"/><path d="M6 8l-4 4 4 4"/><path d="M18 8l4 4-4 4"/></svg>
+                          </span>
+                          <div>
+                            <h3>Gaming surface mode</h3>
+                            <p class="setting-note">Optimizes HERO 2 sensor tracking across cloth, hybrid, and glass mousepads.</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="segmented" id="surface-segmented" role="radiogroup" aria-label="Gaming surface mode" style="width:100%;display:grid;grid-template-columns:repeat(3,1fr)">
+                        <button type="button" class="active" data-surface="AUTOMATIC_DETECTION_MODE">Auto</button>
+                        <button type="button" data-surface="LOD_MODE">On (Tuned)</button>
+                        <button type="button" data-surface="COMPATIBILITY_MODE">Off</button>
+                      </div>
+                    </section>
+
+                    <section class="setting-card">
+                      <div class="setting-heading">
+                        <div class="setting-heading-title">
+                          <span class="card-glyph">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="9" y="3" width="6" height="18" rx="3"/><path d="M12 7v4"/></svg>
+                          </span>
+                          <div>
+                            <h3>BHOP scroll filter</h3>
+                            <p class="setting-note">Prevents accidental scroll wheel steps right after lifted mouse landings.</p>
+                          </div>
+                        </div>
+                        <button type="button" class="switch" id="switch-bhop" role="switch" aria-checked="false" aria-label="Enable BHOP scroll filter">
+                          <span class="switch-thumb"></span>
+                        </button>
+                      </div>
+                      <div style="display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px">
+                        <input type="range" id="slider-bhop-timeout" min="100" max="1000" step="50" value="100" style="--fill:0%" />
+                        <span class="om-badge num" id="badge-bhop-timeout">100 ms</span>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ============================================================
+                   TAB 3: BUTTONS (ButtonMap.tsx interactive callout diagram)
+                   ============================================================ -->
+              <div id="tab-buttons" class="device-tab-pane" hidden>
+                <div style="display:grid;gap:16px">
+                  <section class="setting-card">
+                    <div class="setting-heading">
+                      <div class="setting-heading-title">
+                        <span class="card-glyph">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 2v8"/><path d="M5 10h14"/></svg>
+                        </span>
+                        <div>
+                          <h3>Button assignments</h3>
+                          <p class="setting-note">Select a callout on the mouse diagram, then choose a command or record a custom key on the left.</p>
+                        </div>
+                      </div>
+                      <span class="om-badge is-accent" id="selected-slot-badge">Button 4 · Back</span>
+                    </div>
+
+                    <div id="button-conflict-container" hidden></div>
+
+                    <div class="button-map-body">
+                      <!-- Left Command Picker Sidebar -->
+                      <aside class="button-map-commands" aria-label="Command picker">
+                        <div class="button-map-commands-head">
+                          <span class="button-map-commands-title" id="cmd-picker-heading">Assign to Button 4 (Back)</span>
+                        </div>
+
+                        <input type="search" class="button-map-search" id="input-cmd-search" placeholder="Search commands (e.g. DPI, Copy, F13)..." />
+
+                        <div class="button-map-command-scroll" id="cmd-list-scroll">
+                          <!-- Populated dynamically with categorized Logitech cards -->
+                        </div>
+
+                        <div class="button-map-commands-foot">
+                          <button type="button" class="om-btn is-sm is-primary" id="btn-record-keystroke" style="flex:1">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/></svg>
+                            Record key
+                          </button>
+                          <button type="button" class="om-btn is-sm" id="btn-reset-slot">Reset button</button>
+                          <button type="button" class="om-btn is-sm" id="btn-reset-all-slots">Reset all</button>
+                        </div>
+                      </aside>
+
+                      <!-- Right Interactive Top-Down Mouse Callout Stage -->
+                      <div class="button-map-stage">
+                        <div class="button-map-canvas" id="button-map-canvas">
+                          <img class="button-map-figure" id="button-map-img" src="/devices/pro_x_2_wireless_mouse.png" alt="Top-down button map" />
+                          <!-- 5 interactive callout spots rendered by app.js -->
+                        </div>
+
+                        <div class="button-map-stage-foot">
+                          <div style="display:flex;align-items:center;gap:8px">
+                            <span class="om-label">Layer</span>
+                            <div class="segmented" id="layer-segmented" role="tablist" aria-label="Button layer">
+                              <button type="button" class="active" data-layer="base">Standard</button>
+                              <button type="button" data-layer="gshift">G-Shift</button>
+                            </div>
+                          </div>
+                          <span class="om-meta">5 programmable switches · Base + G-Shift layers</span>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <!-- LIGHTFORCE Hybrid Optical-Mechanical Switch Mode -->
+                  <section class="setting-card">
+                    <div class="setting-heading">
+                      <div class="setting-heading-title">
+                        <span class="card-glyph">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        </span>
+                        <div>
+                          <h3>LIGHTFORCE switch actuation</h3>
+                          <p class="setting-note">Hybrid mode blends optical actuation with galvanic tactile savings; Optical-only keeps the IR beam continuously armed.</p>
+                        </div>
+                      </div>
+                      <div class="segmented" id="hybrid-segmented" role="radiogroup" aria-label="LIGHTFORCE switch mode">
+                        <button type="button" class="active" data-hybrid="POWER_SAVE">Hybrid (Power save)</button>
+                        <button type="button" data-hybrid="LOW_LATENCY">Optical only (Low latency)</button>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+
+              <!-- ============================================================
+                   TAB 4: ONBOARD MEMORY PROFILES
+                   ============================================================ -->
+              <div id="tab-onboard" class="device-tab-pane" hidden>
+                <div style="display:grid;gap:16px">
+                  <section class="setting-card">
+                    <div class="setting-heading">
+                      <div class="setting-heading-title">
+                        <span class="card-glyph">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/></svg>
+                        </span>
+                        <div>
+                          <h3>Onboard memory mode</h3>
+                          <p class="setting-note">When enabled, the mouse runs directly from its internal flash memory slots without host software intervention.</p>
+                        </div>
+                      </div>
+                      <div class="segmented" id="onboard-mode-segmented" role="radiogroup" aria-label="Memory mode">
+                        <button type="button" class="active" data-onboard-mode="false">Host driver mode</button>
+                        <button type="button" data-onboard-mode="true">Onboard memory mode</button>
+                      </div>
+                    </div>
+
+                    <div class="onboard-slot-list" id="onboard-slots-list">
+                      <!-- Populated dynamically with 5 hardware onboard slots -->
+                    </div>
+                  </section>
+                </div>
+              </div>
+
+              <!-- ============================================================
+                   TAB 5: ADVANCED, DEBLOAT FIREWALL & RPC INSPECTOR
+                   ============================================================ -->
+              <div id="tab-advanced" class="device-tab-pane" hidden>
+                <div style="display:grid;gap:16px">
+                  <div class="perf-grid-2">
+                    <!-- Process & Bloatware Guard -->
+                    <section class="setting-card">
+                      <div class="setting-heading">
+                        <div class="setting-heading-title">
+                          <span class="card-glyph">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+                          </span>
+                          <div>
+                            <h3>Process &amp; bloatware guard</h3>
+                            <p class="setting-note">Only the lightweight hardware daemon (<code>lghub_agent.exe</code>) is kept running.</p>
+                          </div>
+                        </div>
+                        <button type="button" class="om-btn is-sm" id="btn-kill-bloat">Purge bloat</button>
+                      </div>
+
+                      <div id="process-guard-rows" style="display:grid">
+                        <!-- Populated dynamically -->
+                      </div>
+                    </section>
+
+                    <!-- Telemetry Firewall Stats -->
+                    <section class="setting-card">
+                      <div class="setting-heading">
+                        <div class="setting-heading-title">
+                          <span class="card-glyph">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                          </span>
+                          <div>
+                            <h3>Zero-internet firewall</h3>
+                            <p class="setting-note">Blocks Sentry, Analytics, WebSSO, Community, and Auto-Update endpoints.</p>
+                          </div>
+                        </div>
+                        <button type="button" class="om-btn is-sm" id="btn-restart-agent">Restart agent</button>
+                      </div>
+
+                      <div style="display:grid">
+                        <div class="setting-row" style="min-height:40px;padding-block:8px">
+                          <span class="om-label">Blocked cloud RPC calls</span>
+                          <strong class="num" id="fw-stat-rpc">0</strong>
+                        </div>
+                        <div class="setting-row" style="min-height:40px;padding-block:8px">
+                          <span class="om-label">Blocked HTTP/IPC trackers</span>
+                          <strong class="num" id="fw-stat-http">0</strong>
+                        </div>
+                        <div class="setting-row" style="min-height:40px;padding-block:8px">
+                          <span class="om-label">Protobuf schemas bridged</span>
+                          <strong class="num" id="fw-stat-proto">661 routes</strong>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+
+                  <!-- Live Hardware RPC Console -->
+                  <section class="setting-card">
+                    <div class="setting-heading">
+                      <div class="setting-heading-title">
+                        <span class="card-glyph">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                        </span>
+                        <div>
+                          <h3>Direct hardware RPC console</h3>
+                          <p class="setting-note">Send raw JSON-RPC verbs (<code>GET</code> / <code>SET</code>) directly to <code>ws://127.0.0.1:9010</code>.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:96px 1fr auto;gap:8px">
+                      <select id="rpc-verb">
+                        <option value="GET">GET</option>
+                        <option value="SET">SET</option>
+                      </select>
+                      <input type="text" id="rpc-path" value="/mouse/dev00000000/info" style="font-family:var(--font-mono)" />
+                      <button type="button" class="om-btn is-primary" id="btn-send-rpc">Execute</button>
+                    </div>
+                    <textarea id="rpc-payload" rows="2" placeholder="Optional JSON payload for SET (e.g. {})" style="font-family:var(--font-mono);font-size:12px"></textarea>
+                    <pre id="rpc-output" style="margin:0;padding:12px;border-radius:var(--r-sm);background:var(--well);box-shadow:var(--inset-shadow);max-height:240px;overflow:auto;font-size:11.5px;color:var(--text-2)">Click "Execute" to inspect live lghub_agent responses.</pre>
+                  </section>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        <!-- PANEL 4: ONBOARD MEMORY -->
-        <div id="panel-onboard" class="panel hidden">
-          <div class="module-card">
-            <div class="module-header">
-              <span class="module-title">Hardware Operating Mode</span>
-              <span class="module-badge" id="badgeOpMode">Software Driver</span>
+        <!-- ==================================================================
+             PAGE 2: HARDWARE TEST (OpenMouse HardwareTestPage.tsx style)
+             ================================================================== -->
+        <section id="page-hardware-test" class="om-page" hidden>
+          <header class="om-page-head">
+            <div>
+              <h1>Hardware test</h1>
+              <p class="om-meta">Automated &amp; interactive diagnostics for sensor readback, polling stability, and onboard persistence.</p>
             </div>
-            <p class="module-desc">
-              Software Mode lets you adjust DPI, polling rate, and assignments live. Onboard Memory Mode runs strictly from the mouse's internal flash slots.
-            </p>
-            <div class="preset-grid" style="grid-template-columns: 1fr 1fr;">
-              <button class="preset-btn active" id="btnOpSoftware">
-                💻 Software Mode<small>Live Tuning Active</small>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="om-btn is-primary" id="btn-start-hwtest">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span id="btn-start-hwtest-label">Start test</span>
               </button>
-              <button class="preset-btn" id="btnOpOnboard">
-                🧠 Onboard Memory<small>Standalone Hardware</small>
+              <button type="button" class="om-btn" id="btn-download-hwreport" disabled>
+                Download report
               </button>
             </div>
-          </div>
+          </header>
 
-          <div class="module-card">
-            <div class="module-header">
-              <span class="module-title">Onboard Flash Profiles (5 Hardware Slots)</span>
-              <button class="btn-ghost" id="btnRefreshOnboard" style="padding:4px 10px; font-size:0.72rem;">Refresh Slots</button>
-            </div>
-            <p class="module-desc">
-              Stored directly inside your PRO X SUPERLIGHT 2 flash memory (`GET /onboard_profiles/dev00000000/profiles`).
-            </p>
-            <div class="slot-list" id="onboardSlotsGrid"></div>
-          </div>
-        </div>
+          <div class="hardware-test-layout">
+            <aside class="om-panel" style="padding:18px;display:grid;gap:14px">
+              <div style="display:grid;place-items:center;padding:14px;border-radius:var(--r-md);background:var(--stage-light),var(--well)">
+                <img src="/devices/pro_x_2_wireless_mouse.png" alt="Device under test" style="height:150px;width:auto;object-fit:contain" />
+              </div>
+              <div style="display:grid;gap:0">
+                <div class="setting-row" style="min-height:36px;padding-block:6px">
+                  <span class="om-label">Device</span>
+                  <strong id="hwtest-dev-name">PRO X SUPERLIGHT 2</strong>
+                </div>
+                <div class="setting-row" style="min-height:36px;padding-block:6px">
+                  <span class="om-label">Target rate</span>
+                  <strong class="num" id="hwtest-target-rate">2000 Hz</strong>
+                </div>
+                <div class="setting-row" style="min-height:36px;padding-block:6px">
+                  <span class="om-label">Peak measured</span>
+                  <strong class="num" id="hwtest-peak-rate" style="color:var(--accent)">— Hz</strong>
+                </div>
+                <div class="setting-row" style="min-height:36px;padding-block:6px">
+                  <span class="om-label">Avg measured</span>
+                  <strong class="num" id="hwtest-avg-rate">— Hz</strong>
+                </div>
+                <div class="setting-row" style="min-height:36px;padding-block:6px">
+                  <span class="om-label">Coalesced events</span>
+                  <strong class="num" id="hwtest-samples">0 samples</strong>
+                </div>
+              </div>
+            </aside>
 
-        <!-- PANEL 5: SYSTEM & PRIVACY -->
-        <div id="panel-system" class="panel hidden">
-          <div class="module-card">
-            <div class="module-header">
-              <span class="module-title">Zero-Bloat Process &amp; Privacy Guard</span>
-              <span class="module-badge green" id="badgeBloatStatus">Clean</span>
-            </div>
-            <p class="module-desc">
-              Only the lightweight `lghub_agent.exe` hardware bridge is used. All Electron UI processes, system tray bloat, SSO login handlers, and Sentry telemetry are terminated.
-            </p>
-            <div id="processStatusList" style="display:flex; flex-direction:column; gap:6px; font-size:0.76rem; font-family:var(--font-mono);"></div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;">
-              <button class="btn-ghost accent" id="btnPurgeBloat">Purge G HUB Bloatware</button>
-              <button class="btn-ghost" id="btnRestartAgent">Ensure Agent Running</button>
-              <button class="btn-ghost" id="btnRefreshStatus">Refresh Telemetry</button>
-            </div>
-          </div>
+            <div class="om-panel">
+              <div class="om-panel-head" style="border-bottom:1px solid var(--line-1)">
+                <h2>Diagnostic stages</h2>
+                <span class="om-badge" id="hwtest-overall-pill">Ready</span>
+              </div>
 
-          <div class="module-card">
-            <div class="module-header">
-              <span class="module-title">Local Hardware Profile Backup</span>
-              <span class="module-badge">100% Offline JSON</span>
-            </div>
-            <p class="module-desc">
-              Export your complete DPI table, report rate, and button bindings to a standalone JSON file, or restore a saved configuration.
-            </p>
-            <div style="display:flex; gap:10px; margin-top:4px;">
-              <button class="btn-ghost accent" id="btnExportProfile" style="flex:1; justify-content:center;">⬇ Export Profile (.json)</button>
-              <label class="btn-ghost" style="flex:1; justify-content:center; cursor:pointer;">
-                ⬆ Import Profile (.json)
-                <input type="file" id="inpImportProfile" accept=".json" style="display:none;" />
-              </label>
+              <div class="hardware-test-stages" id="hwtest-stages-list">
+                <!-- Populated dynamically with 5 diagnostic stages -->
+              </div>
+
+              <div class="hardware-test-banner" id="hwtest-verdict-banner" hidden>
+                <div>
+                  <strong id="hwtest-verdict-title">All hardware checks passed</strong>
+                  <div class="om-meta" id="hwtest-verdict-sub">5 / 5 stages verified against local lghub_agent.exe</div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-    </section>
+        </section>
+
+        <!-- ==================================================================
+             PAGE 3: SETTINGS & 12-THEME GALLERY (InterfaceSettings.tsx style)
+             ================================================================== -->
+        <section id="page-settings" class="om-page om-settings" hidden>
+          <header class="om-page-head">
+            <div>
+              <h1>Settings</h1>
+              <p class="om-meta">Customize appearance, 12 OpenMouse color themes, hardware write behaviour, and portable profile keys.</p>
+            </div>
+          </header>
+
+          <!-- Appearance & 12 Themes -->
+          <section class="om-panel om-settings-group">
+            <header class="om-panel-head">
+              <h2>Appearance</h2>
+            </header>
+            <div class="om-settings-rows">
+              <div class="setting-row setting-row-block">
+                <div class="setting-label">
+                  <span class="setting-title">Theme</span>
+                  <span class="setting-description">Choose an instrument palette. Top-right ASCII glow and controls adapt immediately.</span>
+                </div>
+                <div class="setting-control">
+                  <fieldset class="om-theme-grid" id="theme-gallery-grid" aria-label="Color theme">
+                    <!-- Populated dynamically with all 12 themes -->
+                  </fieldset>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-title">Interface animations</span>
+                  <span class="setting-description">Smooth panel transitions and top-right ASCII sweep-in animation.</span>
+                </div>
+                <button type="button" class="switch" id="pref-animations" role="switch" aria-checked="true">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Behaviour: Instant vs Staged Apply -->
+          <section class="om-panel om-settings-group">
+            <header class="om-panel-head">
+              <h2>Hardware behaviour</h2>
+            </header>
+            <div class="om-settings-rows">
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-title">Write changes immediately</span>
+                  <span class="setting-description">When off, changes queue in a bottom bar ("Save to mouse / Revert") until you commit them.</span>
+                </div>
+                <button type="button" class="switch" id="pref-instant-apply" role="switch" aria-checked="true">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-title">Tactile audio ticks</span>
+                  <span class="setting-description">Play a subtle WebAudio instrument click when hardware settings are committed.</span>
+                </div>
+                <button type="button" class="switch" id="pref-sounds" role="switch" aria-checked="false">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Portable Profile Key (OpenMouse ProfileKeyFields style) -->
+          <section class="om-panel om-settings-group">
+            <header class="om-panel-head">
+              <h2>Portable profile key</h2>
+            </header>
+            <div class="om-settings-rows">
+              <div class="setting-row setting-row-block">
+                <div class="setting-label">
+                  <span class="setting-title">Share or restore your setup</span>
+                  <span class="setting-description">Compact Base64 hardware key containing your DPI stages, polling rates, LOD, and button bindings.</span>
+                </div>
+                <div style="display:grid;gap:10px;width:100%">
+                  <textarea id="profile-key-export" rows="2" readonly style="width:100%;font-family:var(--font-mono);font-size:11.5px"></textarea>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button type="button" class="om-btn is-sm" id="btn-copy-profile-key">Copy profile key</button>
+                    <input type="text" id="profile-key-import" placeholder="Paste a lgwd1:... profile key here to import" style="flex:1;min-width:220px;font-family:var(--font-mono)" />
+                    <button type="button" class="om-btn is-sm is-primary" id="btn-apply-profile-key">Apply key</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
   </div>
 
-  <!-- SLIDE-OVER JSON RPC INSPECTOR DRAWER -->
-  <aside class="drawer" id="rpcDrawer">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <strong style="font-size:0.9rem;">lghub_agent Live RPC Inspector</strong>
-      <button class="btn-ghost" id="btnCloseDrawer">Close</button>
+  <!-- Staged Changes Floating Bar (shown when Instant Apply is OFF and changes are queued) -->
+  <div class="apply-bar" id="staged-apply-bar" hidden>
+    <span class="apply-bar-text" id="staged-apply-count">1 unsaved change</span>
+    <div style="display:flex;gap:8px">
+      <button type="button" class="om-btn is-sm" id="btn-staged-revert">Revert</button>
+      <button type="button" class="om-btn is-sm is-primary" id="btn-staged-commit">Save to mouse</button>
     </div>
-    <p style="font-size:0.74rem; color:var(--text-secondary);">
-      Live WebSocket (`ws://127.0.0.1:9010`) &amp; REST (`/api/rpc`) frames exchanged with `lghub_agent.exe`.
-    </p>
-    <div style="display:flex; gap:6px;">
-      <input
-        id="inpCustomRpcPath"
-         value="/devices/list"
-        style="flex:1; background:#070a0f; border:1px solid var(--border-strong); color:var(--text-primary); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:0.74rem;"
-      />
-      <button class="btn-ghost accent" id="btnSendCustomRpc">GET</button>
-      <button class="btn-ghost" id="btnClearLogs">Clear</button>
+  </div>
+
+  <!-- Keystroke Recorder Modal -->
+  <div class="om-modal-backdrop" id="modal-key-recorder" hidden>
+    <div class="om-modal" role="dialog" aria-modal="true" aria-labelledby="recorder-title">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <h3 id="recorder-title">Record a key or shortcut</h3>
+        <button type="button" class="om-icon-btn" id="btn-close-recorder" aria-label="Close">✕</button>
+      </div>
+      <p class="setting-note">Press any key on your keyboard to bind its matching Logitech action card to <strong id="recorder-slot-label">Button 4</strong>.</p>
+      <div id="recorder-key-display" style="display:grid;place-items:center;height:78px;border-radius:var(--r-md);background:var(--well);box-shadow:var(--inset-shadow);font-family:var(--font-mono);font-size:18px;font-weight:600;color:var(--accent)">
+        Listening for key press...
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button type="button" class="om-btn is-sm" id="btn-cancel-recorder">Cancel</button>
+      </div>
     </div>
-    <div class="log-feed" id="rpcLogList"></div>
-  </aside>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="om-toast" id="om-toast" hidden>
+    <span class="om-dot is-live"></span>
+    <span id="om-toast-msg">Saved to mouse</span>
+  </div>
 
   <script src="/app.js"></script>
 </body>

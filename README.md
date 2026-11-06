@@ -1,23 +1,32 @@
 # Logitech G HUB — Local Web Driver (Zero-Internet / Zero-Bloat Edition)
 
-A 100% local, browser-based driver for Logitech G peripherals reverse-engineered from **Logitech G HUB (`C:\Program Files\LGHUB`, v2026.7.1011216)** using the REA MCP reverse-engineering suite.
+A 100% local, cross-browser web driver for Logitech G peripherals reverse-engineered from **Logitech G HUB (`C:\Program Files\LGHUB`, v2026.7.1011216)** using the REA MCP reverse-engineering suite, featuring an instrument-grade UI inspired by **OpenMouse**, **Wooting Wootility**, **MCHOSE Hub**, and **Corsair Web Hub**.
 
-It runs the complete G HUB hardware configuration UI (DPI Editor, Advanced DPI, 8000 Hz LIGHTSPEED Report Rate, Onboard Memory Manager, Macros, Assignments, LIGHTSYNC RGB, Acoustics, Surface Tuning, Battery & Power Telemetry) directly inside **any standard web browser** at **`http://127.0.0.1:1133`** (`1133 = 0x046D`, Logitech's USB Vendor ID) while eliminating the bloated Electron shell (`lghub.exe`), System Tray app (`lghub_system_tray.exe`), SSO handler (`lghub_sso_handler.exe`), Marketplace, Game Launcher, Sentry crash reporting, and all external internet dependencies.
+Unlike WebHID-only web drivers that only work in Chromium browsers, this driver works in **any web browser** (Firefox, Safari, Chrome, Brave, Edge) at **`http://127.0.0.1:1133`** (`1133 = 0x046D`, Logitech's USB Vendor ID) via a zero-dependency local Node.js bridge to `lghub_agent.exe`, while terminating the bloated Electron shell (`lghub.exe`), System Tray app (`lghub_system_tray.exe`), SSO handler (`lghub_sso_handler.exe`), Marketplace, Game Launcher, Sentry crash reporting, and all external internet dependencies.
 
 ---
 
-## Architectural Findings (REA MCP Evidence)
+## Key Features & UI Polish
 
-1. **Desktop Packaging & Binary Layout** (`ev_b13e0c12a2587b06ab8f4d2065f9d5a8e870002e77478302550dd76e6e809125`, `ev_d79326afca48106dec0ad212afcb5a6bd7b4aa8bdff899296cfe06dc396c2593`):
-   - `lghub.exe` is an Electron 39.1.2 shell (with `RunAsNode: disabled` and `EnableEmbeddedAsarIntegrityValidation: enabled`) that loads `resources/app.asar`.
-   - Actual USB/LIGHTSPEED hardware communication is handled by a lightweight native C++ daemon, `C:\Program Files\LGHUB\lghub_agent.exe`.
-2. **Electron ASAR & IPC Bridge (`main.js` + `preload.bundle.js`)** (`ev_8cbc10c3d68dc7fe0597f01077e2c5de5ba26eee08a3a0528ca5f6fe203d6e47`, `ev_2f53e635c33fe62e6763a293d9afa643db56b75f34e737e454bb8da2f291e79c`, `ev_bc70c4e828dcca2e59c4e0d5d3d57724fdc53dbc0232f3af48acc0177d883f1e`):
-   - `preload.bundle.js` exposes 7 `contextBridge` globals onto `window`: `electron`, `electronNet`, `electronGLNet`, `electronStore`, `lps`, `utils`, and `env`.
-   - While `main.js` connects `electronNet` to the Windows Named Pipe `\\.\pipe\e0c10619-60c9-5414-a4e8-5d9e19d4dedc` (which enforces an Authenticode process check on the connecting client), `lghub_agent.exe` simultaneously hosts:
-     - **`ws://127.0.0.1:9010` (WebSocket subprotocol `"json"`)**: Serves the exact same RPC message router (`GET`, `SET`, `SUBSCRIBE`, `UNSUBSCRIBE`, `BROADCAST`) in native JSON (with `google.protobuf.Any` `"@type"` annotations that `main.js` strips via `delete payload["@type"]`).
-     - **`http://127.0.0.1:9180`**: Serves local device thumbnails, SVGs, and lighting assets (`/core_assets/...`).
-3. **Managed Update/Bootstrap & Native Audio DSP** (`ev_a2c584dfa79f3a60c36147863ad24a4a61dfeba08a3a0528ca5f6fe203d6e47`, `ev_dd8030345549c0d75c6486fec0026666e071f067766cac34146aa95aa1fd959e`):
-   - `lghub_software_manager.exe` (.NET WPF updater) and `lghub_sso_handler.exe` are only needed for cloud updates and OAuth login, and can be bypassed completely.
+- **Works in Any Browser (Zero WebHID Lock-In)**: Communicates over standard local HTTP/WebSocket (`http://127.0.0.1:1133` -> `ws://127.0.0.1:9010`) so Firefox, Safari, and Chromium browsers all have full hardware read/write access.
+- **Instrument-Grade Design System**:
+  - **12 Switchable Themes**: `Ice` (Logitech Cyan), `Emerald`, `Matt`, `Violet`, `Ember`, `Mono`, `Miku`, `Catppuccin Mocha`, `Catppuccin Macchiato`, `Catppuccin Frappé`, `NieR: Automata`, and `Light` — with live self-styled preview tiles and deterministic top-right ASCII noise glow (` .:-=+*#%@`).
+  - **100% Local Assets**: Bundled variable `DM Sans` font (`/fonts/DMSans-Variable.ttf`) and local studio device renders (`/devices/pro_x_2_wireless_mouse.png` + `/__agent_asset__/` proxy) with strict `127.0.0.1`-only Content-Security-Policy.
+- **Overview & Polling-Rate-Aware Battery Sparkline**:
+  - Live 4-figure setup summary (`Sensitivity`, `Polling rate`, `Battery`, `Control mode`) with one-click DPI stage chips.
+  - Real-time battery history sparkline (`localStorage` checkpoints) and remaining-hours estimator dynamically scaled by wireless polling rate mW draw (`95h @ 1000 Hz` down to `24h @ 8000 Hz`).
+- **Performance Tuning (`HERO 2 44K` & `8000 Hz LIGHTSPEED`)**:
+  - **5-Stage & Single-View DPI Editor**: Enable/disable stages, hardware LED stage color swatches, independent **X/Y axis lock/unlock**, and per-stage Lift-Off Distance (`Low` / `Medium` / `High`).
+  - **Bar-Tower Polling Rate Selector**: Visual 7-step bar-height selector (`125`, `250`, `500`, `1000`, `2000`, `4000`, `8000 Hz`) for Wireless (`LIGHTSPEED`) and Wired (`USB`) with live battery runtime estimates on every step.
+  - **Gaming Surface Mode & BHOP Filter**: `Auto` / `On (Tuned)` / `Off` surface mode + scroll wheel BHOP debounce filter (`100`–`1000 ms`).
+- **Interactive Top-Down Button Map**:
+  - Numbered callouts (`1`–`5`) with leader lines on the top-down mouse render, `Standard` and `G-Shift` layers, searchable categorized command picker (all 281 hardware cards), **Keystroke Recorder**, and duplicate-binding conflict warnings.
+  - **LIGHTFORCE Switch Mode**: Toggle between `Hybrid (Power save)` and `Optical only (Low latency)`.
+- **Automated & Interactive Hardware Test Suite**:
+  - 5-stage diagnostic runner verifying local `lghub_agent` RPC latency, firmware/receiver identity, sensor/battery telemetry, a 3.5-second live coalesced pointer polling rate sampler (`Peak Hz`, `Avg Hz`, sample count), and downloadable JSON test reports.
+- **Instant Apply vs. Staged Pending Bar & Portable Profile Keys**:
+  - Write changes immediately on click, or queue changes in a floating bottom apply bar (`Save to mouse` / `Revert`).
+  - Share or back up your setup as a compact `lgwd1:...` Base64 profile key or full JSON file.
 
 ---
 
@@ -33,15 +42,12 @@ cd c:\Users\Nick\Downloads\rea-main\lghub-web-driver
 ```powershell
 node c:\Users\Nick\Downloads\rea-main\lghub-web-driver\server.js
 ```
-Then open **`http://127.0.0.1:1133`** in any browser (Chrome, Edge, Firefox, Brave).
-
-Press **`Alt+G`** (or click the floating **`Local Web Driver`** pill in the bottom-right corner) at any time to open the **Quick Controls, Firewall Telemetry & Live Agent RPC Drawer**.
+Then open **`http://127.0.0.1:1133`** in any browser (Firefox, Chrome, Edge, Brave, Safari).
 
 ---
 
 ## Project Structure
-- [`server.js`](./server.js): Zero-dependency Node.js HTTP + RFC 6455 WebSocket server (`127.0.0.1:1133`). Auto-starts `lghub_agent.exe` (`cwd: C:\Program Files\LGHUB`), kills Electron bloat processes (`lghub.exe`, `lghub_system_tray.exe`, `lghub_sso_handler.exe`), proxies `/__ghub_ws__` to `ws://127.0.0.1:9010`, proxies `/__agent_asset__/*` to `http://127.0.0.1:9180/*`, and filters out telemetry/cloud/update RPCs.
-- [`ghub-proto-bridge.cjs`](./ghub-proto-bridge.cjs): Standalone `@bufbuild/protobuf` + `@logi/common-core-shared-protos` schema registry extracted from `main.js` (13 route schemas).
-- [`public/preload-web-shim.js`](./public/preload-web-shim.js): Browser-side Electron `contextBridge` polyfill, `fetch`/`XHR` zero-internet firewall, `file:///` and `127.0.0.1:9180` asset URL rewriter, and floating Quick Control & RPC Drawer.
-- [`public/debloat.css`](./public/debloat.css): Hides Electron window controls, cloud login, Marketplace, and Game Launcher UI bloat, and styles the floating HUD pill and drawer.
-- [`public/index.html`](./public/index.html) & `public/app.min.js`: Extracted G HUB web UI with strict localhost-only Content-Security-Policy.
+- [`server.js`](./server.js): Zero-dependency Node.js HTTP + RFC 6455 WebSocket server (`127.0.0.1:1133`). Auto-starts `lghub_agent.exe`, terminates Electron bloat processes (`lghub.exe`, `lghub_system_tray.exe`, `lghub_sso_handler.exe`), proxies `/__ghub_ws__` to `ws://127.0.0.1:9010`, proxies `/__agent_asset__/*` to `http://127.0.0.1:9180/*`, and blocks all cloud/telemetry RPCs.
+- [`ghub-proto-bridge.cjs`](./ghub-proto-bridge.cjs): Standalone `@bufbuild/protobuf` + `@logi/common-core-shared-protos` schema registry extracted from `main.js` (661 routes).
+- [`public/index.html`](./public/index.html), [`public/styles.css`](./public/styles.css), [`public/app.js`](./public/app.js): The OpenMouse-inspired cross-browser web driver frontend.
+- [`public/legacy-ghub.html`](./public/legacy-ghub.html): Optional fallback to the original extracted G HUB React bundle with debloat shim.
