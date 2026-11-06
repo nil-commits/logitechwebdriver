@@ -1,0 +1,232 @@
+/* ==========================================================================
+   Logitech G HUB Local Web Driver — De-Bloat & Browser Adaptation Styles
+   ========================================================================== */
+
+/* Hide Electron frameless window control buttons (minimize/maximize/close) in browser */
+[data-testid="window-controls"],
+.window-controls,
+.titlebar-buttons,
+button[aria-label="Minimize"],
+button[aria-label="Maximize"],
+button[aria-label="Close"] {
+  display: none !important;
+}
+
+/* Hide Account Login / Cloud Community / Marketplace / Game Launcher bloat */
+[data-testid="account-button"],
+[data-testid="community-button"],
+[data-testid="glauncher-tab"],
+a[href*="community"],
+a[href*="glauncher"] {
+  display: none !important;
+}
+
+/* Floating Local Web Driver Status Pill & Quick-Control Drawer */
+#lghub-local-driver-pill {
+  position: fixed;
+  bottom: 14px;
+  right: 16px;
+  z-index: 999998;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(15, 20, 28, 0.92);
+  border: 1px solid rgba(0, 184, 252, 0.45);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  color: #e6f1ff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  user-select: none;
+  backdrop-filter: blur(8px);
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#lghub-local-driver-pill:hover {
+  transform: translateY(-1px);
+  border-color: #00b8fc;
+  box-shadow: 0 8px 28px rgba(0, 184, 252, 0.25);
+}
+
+#lghub-local-driver-pill .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00e676;
+  box-shadow: 0 0 8px #00e676;
+}
+
+#lghub-local-driver-pill .status-dot.offline {
+  background: #ff5252;
+  box-shadow: 0 0 8px #ff5252;
+}
+
+#lghub-local-driver-pill .badge-shield {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 184, 252, 0.16);
+  color: #4dd0ff;
+  font-size: 11px;
+}
+
+/* Slide-over Quick Controls & Hardware RPC Drawer */
+#lghub-local-driver-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 440px;
+  max-width: 94vw;
+  z-index: 999999;
+  background: #0d1117;
+  border-left: 1px solid rgba(0, 184, 252, 0.35);
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.75);
+  color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(105%);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#lghub-local-driver-drawer.open {
+  transform: translateX(0);
+}
+
+#lghub-local-driver-drawer .drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #21262d;
+  background: #161b22;
+}
+
+#lghub-local-driver-drawer .drawer-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #00b8fc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#lghub-local-driver-drawer .drawer-close {
+  background: transparent;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#lghub-local-driver-drawer .drawer-close:hover {
+  color: #fff;
+  border-color: #00b8fc;
+}
+
+#lghub-local-driver-drawer .drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+#lghub-local-driver-drawer .card {
+  background: #161b22;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+#lghub-local-driver-drawer .card-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8b949e;
+  margin-bottom: 8px;
+}
+
+#lghub-local-driver-drawer .kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.45);
+}
+
+#lghub-local-driver-drawer .kv-row:last-child {
+  border-bottom: none;
+}
+
+#lghub-local-driver-drawer .btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#lghub-local-driver-drawer .drv-btn {
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+  border-radius: 6px;
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+#lghub-local-driver-drawer .drv-btn:hover {
+  background: #30363d;
+  border-color: #00b8fc;
+}
+
+#lghub-local-driver-drawer .drv-btn.primary {
+  background: rgba(0, 184, 252, 0.18);
+  border-color: #00b8fc;
+  color: #58d5ff;
+}
+
+#lghub-local-driver-drawer .rpc-inputs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+#lghub-local-driver-drawer select,
+#lghub-local-driver-drawer input,
+#lghub-local-driver-drawer textarea {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+#lghub-local-driver-drawer pre {
+  background: #090c10;
+  border: 1px solid #21262d;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: #7ee787;
+  max-height: 220px;
+  overflow: auto;
+  margin: 6px 0 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

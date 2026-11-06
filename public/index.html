@@ -1,0 +1,21 @@
+<!doctype html>
+<html data-theme="GHUB">
+  <head>
+    <title>Logitech G HUB — Local Web Driver (Zero-Internet / Zero-Bloat)</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; font-src 'self' data:; media-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; connect-src 'self' ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:*; object-src 'none';"
+    />
+    <link rel="icon" type="image/png" href="icon.png" />
+    <link href="app.min.css" rel="stylesheet" />
+    <link href="debloat.css" rel="stylesheet" />
+    <script src="preload-web-shim.js"></script>
+    <script defer src="app.min.js"></script>
+  </head>
+  <body role="none" tabindex="-1">
+    <div id="root"></div>
+    <div id="modal"></div>
+  </body>
+</html>
