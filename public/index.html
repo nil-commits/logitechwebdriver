@@ -355,9 +355,9 @@
                         </div>
 
                         <div class="segmented" id="lod-segmented" role="radiogroup" aria-label="Lift-off distance" style="width:100%;display:grid;grid-template-columns:repeat(3,1fr)">
-                          <button type="button" data-lod="LOW">Low</button>
-                          <button type="button" class="active" data-lod="MEDIUM">Medium</button>
-                          <button type="button" data-lod="HIGH">High</button>
+                          <button type="button" data-lod="1">Low</button>
+                          <button type="button" class="active" data-lod="2">Medium</button>
+                          <button type="button" data-lod="3">High</button>
                         </div>
 
                         <div style="border-top:1px solid var(--line-1);padding-top:12px;display:grid;gap:8px">
@@ -447,7 +447,7 @@
                         </button>
                       </div>
                       <div style="display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px">
-                        <input type="range" id="slider-bhop-timeout" min="100" max="1000" step="50" value="100" style="--fill:0%" />
+                        <input type="range" id="slider-bhop-timeout" min="100" max="1000" step="100" value="100" style="--fill:0%" />
                         <span class="om-badge num" id="badge-bhop-timeout">100 ms</span>
                       </div>
                     </section>

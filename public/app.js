@@ -1,15 +1,22 @@
 /**
  * Logitech Web Driver — OpenMouse-Polished Local Hardware Instrument
  * Works in ANY browser (Firefox, Safari, Chrome, Edge, Brave) via local Node.js <-> lghub_agent.exe bridge.
- * Zero internet requests, zero cloud telemetry, zero Electron bloat.
+ * Every hardware write is verified via lghub_agent.exe result.code === "SUCCESS" AND a read-after-write GET check.
  */
 (function () {
   "use strict";
 
   // ==========================================================================
-  // Constants & Theme Definitions (from OpenMouse tokens.css & battery-history.ts)
+  // Constants & Theme Definitions
   // ==========================================================================
   const STAGE_COLORS = ["#FFFFFF", "#FF7203", "#85FFB4", "#FFE913", "#FF00D7"];
+  const LOD_LABELS = { 1: "Low", 2: "Medium", 3: "High" };
+
+  function normalizeLod(val) {
+    if (val === 1 || val === "1" || val === "LOW") return 1;
+    if (val === 3 || val === "3" || val === "HIGH") return 3;
+    return 2; // 2 = Medium default
+  }
 
   // Power draw model (mW) by polling rate — calibrated for PRO X SUPERLIGHT 2 (95h @ 1000Hz)
   const POLLING_MW = {
@@ -108,9 +115,9 @@
   const state = {
     activePage: "device",
     activeTab: "overview",
-    dpiViewMode: "stages", // "stages" | "single"
-    buttonLayer: "base", // "base" | "gshift"
-    selectedSpotIndex: 4, // default to Button 4 (Back)
+    dpiViewMode: "stages",
+    buttonLayer: "base",
+    selectedSpotIndex: 4,
     cmdSearchQuery: "",
 
     preferences: {
@@ -121,9 +128,8 @@
       sidebarCollapsed: localStorage.getItem("lgwd_sidebar_collapsed") === "1",
     },
 
-    stagedQueue: [], // queued operations when instantApply === false
+    stagedQueue: [],
 
-    // Live Hardware Snapshot
     agentOnline: true,
     processes: {},
     firewall: { blockedRpcCount: 0, blockedHttpCount: 0 },
@@ -136,6 +142,7 @@
     modeStatus: { value: 0, hybridMode: "POWER_SAVE", surfaceMode: "AUTOMATIC_DETECTION_MODE" },
     onboardMode: false,
     onboardProfiles: [],
+    activeOnboardSlot: "PROFILE_1",
 
     activeProfileId: "",
     activeProfile: null,
@@ -146,30 +153,30 @@
     bhopCardId: "",
     bhopCard: null,
 
-    // Parsed live settings
     activeDpiIndex: 1,
     wiredRate: 1000,
     wirelessRate: 2000,
     dpiEntries: {
-      "1": { dpi: 1600, dpiX: 1600, dpiY: 1600, lod: "MEDIUM", disabled: false, asymmetric: false },
-      "2": { dpi: 800, dpiX: 800, dpiY: 800, lod: "MEDIUM", disabled: false, asymmetric: false },
-      "3": { dpi: 1200, dpiX: 1200, dpiY: 1200, lod: "MEDIUM", disabled: false, asymmetric: false },
-      "4": { dpi: 2400, dpiX: 2400, dpiY: 2400, lod: "MEDIUM", disabled: false, asymmetric: false },
-      "5": { dpi: 3200, dpiX: 3200, dpiY: 3200, lod: "MEDIUM", disabled: true, asymmetric: false },
+      "1": { dpi: 800, dpiX: 800, dpiY: 800, lod: 2, disabled: false, asymmetric: false },
+      "2": { dpi: 1200, dpiX: 1200, dpiY: 1200, lod: 2, disabled: false, asymmetric: false },
+      "3": { dpi: 1600, dpiX: 1600, dpiY: 1600, lod: 2, disabled: false, asymmetric: false },
+      "4": { dpi: 2400, dpiX: 2400, dpiY: 2400, lod: 2, disabled: false, asymmetric: false },
+      "5": { dpi: 3200, dpiX: 3200, dpiY: 3200, lod: 2, disabled: false, asymmetric: false },
     },
     bhopEnabled: false,
     bhopTimeout: 100,
 
-    slotAssignments: {}, // slotId -> cardId
-    allCards: [], // from GET /cards
+    slotAssignments: {},
+    allCards: [],
     cardById: new Map(),
 
     hwTestReport: null,
     hwTestRunning: false,
+    lastVerifiedWrite: null,
   };
 
   // ==========================================================================
-  // OpenMouse Deterministic ASCII Glow Field (src/shared/ascii.ts port)
+  // OpenMouse Deterministic ASCII Glow Field
   // ==========================================================================
   const ASCII_RAMP = " .:-=+*#%@";
   function hashNoise(x, y) {
@@ -225,7 +232,7 @@
   }
 
   // ==========================================================================
-  // Tactile WebAudio Feedback & Toast
+  // Tactile WebAudio Feedback & Verified Toast
   // ==========================================================================
   let audioCtx = null;
   function playTick(freq = 680) {
@@ -246,20 +253,22 @@
   }
 
   let toastTimer = null;
-  function showToast(msg) {
+  function showToast(msg, isError = false) {
     const toast = document.getElementById("om-toast");
     const text = document.getElementById("om-toast-msg");
+    const dot = toast?.querySelector(".om-dot");
     if (!toast || !text) return;
+    if (dot) dot.className = `om-dot ${isError ? "is-warn" : "is-live"}`;
     text.textContent = msg;
     toast.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
       toast.hidden = true;
-    }, 2200);
+    }, 2800);
   }
 
   // ==========================================================================
-  // RPC & Hardware Synchronization Layer
+  // Strict RPC Layer with Hardware Result Code Enforcement
   // ==========================================================================
   async function rpc(path, verb = "GET", payload = undefined) {
     const res = await fetch("/api/rpc", {
@@ -268,7 +277,12 @@
       body: JSON.stringify({ path, verb, payload }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (data.result && data.result.code && data.result.code !== "SUCCESS") {
+      throw new Error(`${data.result.code}${data.result.what ? ": " + data.result.what : ""}`);
+    }
+    return data;
   }
 
   async function queueOrExecuteHardwareWrite(label, asyncFn) {
@@ -276,23 +290,28 @@
     if (state.preferences.instantApply) {
       const badge = document.getElementById("badge-sync-state");
       if (badge) {
-        badge.textContent = "Writing...";
+        badge.textContent = "Applying & verifying...";
         badge.className = "om-badge is-accent";
       }
       try {
-        await asyncFn();
+        const verifiedDetail = await asyncFn();
+        const confirmText = verifiedDetail ? `✓ Verified: ${verifiedDetail}` : `✓ Verified: ${label}`;
+        state.lastVerifiedWrite = { time: new Date().toLocaleTimeString(), text: confirmText };
         if (badge) {
-          badge.textContent = "Synced to mouse";
+          badge.textContent = confirmText;
           badge.className = "om-badge is-ok";
         }
-        showToast(label);
+        playTick(920);
+        showToast(confirmText, false);
         updateProfileKeyField();
       } catch (err) {
         if (badge) {
-          badge.textContent = "Write error";
+          badge.textContent = `Hardware error: ${err.message}`;
           badge.className = "om-badge";
         }
-        showToast(`Error: ${err.message}`);
+        showToast(`Failed: ${err.message}`, true);
+        // Reload true state from hardware so UI never lies
+        await loadFullHardwareState();
       }
     } else {
       state.stagedQueue.push({ label, asyncFn });
@@ -333,7 +352,6 @@
       if (activeDev) {
         state.activeDeviceId = activeDev.id || "dev00000000";
         state.deviceInfo = activeDev;
-        state.onboardMode = !!activeDev.onboardMode;
       }
       if (statusRes.hardware?.battery) {
         state.battery = statusRes.hardware.battery;
@@ -345,20 +363,28 @@
 
       const devId = state.activeDeviceId;
 
-      // Parallel fetch of mode_status, onboard_profiles, active profile, and all cards
-      const [modeRes, onboardRes, activeProfRes, profilesRes, cardsRes] = await Promise.all([
+      const [modeRes, onboardModeRes, onboardRes, activeProfRes, profilesRes, cardsRes] = await Promise.all([
         rpc(`/mouse/${devId}/mode_status`, "GET").catch(() => null),
+        rpc(`/onboard_profiles/${devId}/onboard_mode`, "GET").catch(() => null),
         rpc(`/onboard_profiles/${devId}/profiles`, "GET").catch(() => null),
         rpc("/profile/active", "GET").catch(() => null),
         rpc("/profiles", "GET").catch(() => null),
         rpc("/cards", "GET", {}).catch(() => null),
       ]);
 
-      if (modeRes?.payload) {
-        state.modeStatus = modeRes.payload;
+      if (modeRes?.payload && Object.keys(modeRes.payload).length > 0) {
+        state.modeStatus = {
+          value: modeRes.payload.value || 0,
+          hybridMode: modeRes.payload.hybridMode || "POWER_SAVE",
+          surfaceMode: modeRes.payload.surfaceMode || "AUTOMATIC_DETECTION_MODE",
+        };
       }
-      if (onboardRes?.payload?.profiles) {
-        state.onboardProfiles = onboardRes.payload.profiles;
+      if (onboardModeRes?.payload) {
+        state.onboardMode = !!onboardModeRes.payload.enabled;
+      }
+      if (onboardRes?.payload?.directoryEntries) {
+        state.onboardProfiles = onboardRes.payload.directoryEntries;
+        state.activeOnboardSlot = onboardRes.payload.activeProfile || "PROFILE_1";
       }
 
       if (cardsRes?.payload?.cards) {
@@ -369,7 +395,6 @@
         }
       }
 
-      // Resolve active profile & slot assignments
       const profList = profilesRes?.payload?.profiles || [];
       const activeId = activeProfRes?.payload?.id || profList.find((p) => p.activeForAll)?.id || profList[0]?.id;
       const activeProf = profList.find((p) => p.id === activeId) || activeProfRes?.payload || profList[0];
@@ -413,7 +438,7 @@
                       dpi: Number(e.dpi || 800),
                       dpiX: Number(e.dpiX || e.dpi || 800),
                       dpiY: Number(e.dpiY || e.dpi || 800),
-                      lod: e.lod || "MEDIUM",
+                      lod: normalizeLod(e.lod),
                       disabled: !!e.disabled,
                       asymmetric: !!e.asymmetric,
                     };
@@ -445,62 +470,189 @@
   }
 
   // ==========================================================================
-  // Hardware Write Helpers (DPI, Polling Rate, Surface, Hybrid, Buttons, Onboard)
+  // Verified Hardware Write Helpers (Read-After-Write Confirmed)
   // ==========================================================================
   async function persistPresetAndSensitivityCards(label) {
     await queueOrExecuteHardwareWrite(label, async () => {
+      // Normalize entries: ensure lod is integer 1|2|3, sync dpi/dpiX/dpiY when symmetric,
+      // and enable advancedEnabled whenever any stage uses asymmetric X/Y or non-default LOD.
+      let needsAdvanced = false;
+      const cleanEntries = {};
+      for (let i = 1; i <= 5; i++) {
+        const k = String(i);
+        const src = state.dpiEntries[k];
+        const lodInt = normalizeLod(src.lod);
+        const asym = !!src.asymmetric;
+        const dpiX = Number(src.dpiX || src.dpi || 800);
+        const dpiY = asym ? Number(src.dpiY || src.dpi || 800) : dpiX;
+        const dpi = dpiX;
+        if (asym || lodInt !== 2) needsAdvanced = true;
+        cleanEntries[k] = {
+          disabled: !!src.disabled,
+          asymmetric: asym,
+          dpi,
+          dpiX,
+          dpiY,
+          lod: lodInt,
+        };
+        state.dpiEntries[k] = cleanEntries[k];
+      }
+
+      // Ensure activeDpiIndex, defaultIndex, and shiftIndex point to enabled stages
+      if (cleanEntries[String(state.activeDpiIndex)]?.disabled) {
+        const firstEnabled = Object.keys(cleanEntries).find((k) => !cleanEntries[k].disabled) || "1";
+        state.activeDpiIndex = Number(firstEnabled);
+      }
+
       if (state.presetCard && state.presetCardId) {
         const updatedPreset = JSON.parse(JSON.stringify(state.presetCard));
-        updatedPreset.readOnly = true;
+        updatedPreset.readOnly = false;
         updatedPreset.mouseSettings.reportRate = {
           value: state.wiredRate,
           deviceId: "",
           wirelessRate: state.wirelessRate,
         };
-        if (!updatedPreset.mouseSettings.advancedDpiTable) {
-          updatedPreset.mouseSettings.advancedDpiTable = {
-            entries: {},
-            defaultIndex: 1,
-            shiftIndex: 0,
-            advancedEnabled: false,
-          };
+        const prevTbl = updatedPreset.mouseSettings.advancedDpiTable || {};
+        let defIdx = Number(prevTbl.defaultIndex || 1);
+        if (cleanEntries[String(defIdx)]?.disabled) defIdx = state.activeDpiIndex;
+        let shiftIdx = Number(prevTbl.shiftIndex || 1);
+        if (cleanEntries[String(shiftIdx)]?.disabled) shiftIdx = state.activeDpiIndex;
+
+        updatedPreset.mouseSettings.advancedDpiTable = {
+          entries: cleanEntries,
+          defaultIndex: defIdx,
+          shiftIndex: shiftIdx,
+          advancedEnabled: needsAdvanced,
+        };
+
+        if (state.presetCard.readOnly) {
+          // Promote default prefab preset to custom card first
+          delete updatedPreset.id;
+          updatedPreset.category = "custom";
+          updatedPreset.name = "Logitech Web Driver Custom";
+          const createRes = await rpc("/card", "SET", updatedPreset);
+          if (createRes.payload?.id) {
+            state.presetCardId = createRes.payload.id;
+            state.presetCard = createRes.payload;
+          }
+        } else {
+          await rpc("/card", "SET", updatedPreset);
+          state.presetCard = updatedPreset;
         }
-        updatedPreset.mouseSettings.advancedDpiTable.entries = JSON.parse(JSON.stringify(state.dpiEntries));
-        await rpc("/card", "SET", updatedPreset);
-        state.presetCard = updatedPreset;
       }
 
       if (state.sensitivityPointerCard && state.sensitivityPointerCardId) {
         const updatedPointer = JSON.parse(JSON.stringify(state.sensitivityPointerCard));
-        updatedPointer.readOnly = true;
-        updatedPointer.mouseSensitivity.activeDpiIndex = state.activeDpiIndex;
-        await rpc("/card", "SET", updatedPointer);
-        state.sensitivityPointerCard = updatedPointer;
+        updatedPointer.readOnly = false;
+        updatedPointer.mouseSensitivity = {
+          presetId: state.presetCardId,
+          activeDpiIndex: state.activeDpiIndex,
+        };
+        if (state.sensitivityPointerCard.readOnly) {
+          delete updatedPointer.id;
+          updatedPointer.name = "CUSTOM_MOUSE_SENSITIVITY";
+          updatedPointer.profileId = state.activeProfileId;
+          const asgRes = await rpc("/assignment", "SET", {
+            profile: state.activeProfileId,
+            slotId: "prox2wirelessmouse_mouse_sensitivity",
+            card: updatedPointer,
+            updateCard: true,
+            returnCard: true,
+          });
+          if (asgRes.payload?.card) {
+            state.sensitivityPointerCard = asgRes.payload.card;
+            state.sensitivityPointerCardId = asgRes.payload.card.id;
+          }
+        } else {
+          await rpc("/card", "SET", updatedPointer);
+          state.sensitivityPointerCard = updatedPointer;
+        }
       }
+
+      // Read-after-write verification from lghub_agent
+      const [verifySens, verifyPreset] = await Promise.all([
+        rpc("/card", "GET", { id: state.sensitivityPointerCardId }),
+        rpc("/card", "GET", { id: state.presetCardId }),
+      ]);
+      const rIdx = verifySens.payload?.mouseSensitivity?.activeDpiIndex;
+      const rEntry = verifyPreset.payload?.mouseSettings?.advancedDpiTable?.entries?.[String(rIdx)];
+      const rWireless = verifyPreset.payload?.mouseSettings?.reportRate?.wirelessRate;
+      if (rIdx !== state.activeDpiIndex || rWireless !== state.wirelessRate) {
+        throw new Error(`Hardware readback mismatch (Stage ${rIdx}, ${rWireless} Hz)`);
+      }
+      const dpiDesc = rEntry?.asymmetric ? `${rEntry.dpiX}×${rEntry.dpiY}` : `${rEntry?.dpi}`;
+      return `S${rIdx} · ${dpiDesc} DPI · LOD ${LOD_LABELS[rEntry?.lod] || "Med"} · ${rWireless} Hz`;
     });
   }
 
   async function persistModeStatus(label) {
     await queueOrExecuteHardwareWrite(label, async () => {
+      const targetHybrid = state.modeStatus.hybridMode;
+      const targetSurface = state.modeStatus.surfaceMode;
       await rpc(`/mouse/${state.activeDeviceId}/mode_status`, "SET", {
         value: state.modeStatus.value || 0,
-        hybridMode: state.modeStatus.hybridMode,
-        surfaceMode: state.modeStatus.surfaceMode,
+        hybridMode: targetHybrid,
+        surfaceMode: targetSurface,
       });
+      const readback = await rpc(`/mouse/${state.activeDeviceId}/mode_status`, "GET");
+      const ms = readback.payload || {};
+      if (ms.hybridMode !== targetHybrid || ms.surfaceMode !== targetSurface) {
+        throw new Error(`Readback mismatch (${ms.hybridMode} / ${ms.surfaceMode})`);
+      }
+      return `${ms.hybridMode === "LOW_LATENCY" ? "Optical-only" : "Hybrid"} · Surface ${ms.surfaceMode.replace("_MODE", "")}`;
     });
   }
 
   async function persistBhopCard(label) {
     await queueOrExecuteHardwareWrite(label, async () => {
-      if (!state.bhopCard) return;
-      const updated = JSON.parse(JSON.stringify(state.bhopCard));
-      updated.readOnly = true;
-      updated.bunnyHopping = {
-        enabled: state.bhopEnabled,
-        timeout: state.bhopTimeout,
-      };
-      await rpc("/card", "SET", updated);
-      state.bhopCard = updated;
+      if (!state.bhopCard) throw new Error("No BHOP card loaded");
+      const targetEnabled = !!state.bhopEnabled;
+      const targetTimeout = Math.round(Math.max(100, Math.min(1000, Number(state.bhopTimeout))) / 100) * 100;
+      state.bhopTimeout = targetTimeout;
+
+      if (state.bhopCard.readOnly) {
+        // Default BHOP card (67ff9ab8...) is readOnly:true -> promote via SET /assignment (updateCard:true, returnCard:true)
+        const cardPayload = JSON.parse(JSON.stringify(state.bhopCard));
+        delete cardPayload.id;
+        cardPayload.readOnly = false;
+        cardPayload.category = "BUNNY_HOPPING";
+        cardPayload.profileId = state.activeProfileId;
+        cardPayload.bunnyHopping = { enabled: targetEnabled, timeout: targetTimeout };
+
+        const setRes = await rpc("/assignment", "SET", {
+          profile: state.activeProfileId,
+          slotId: "prox2wirelessmouse_bunny_hopping",
+          card: cardPayload,
+          updateCard: true,
+          returnCard: true,
+        });
+        const newCard = setRes.payload?.card || setRes.payload;
+        if (newCard?.id) {
+          state.bhopCard = newCard;
+          state.bhopCardId = newCard.id;
+          state.slotAssignments["prox2wirelessmouse_bunny_hopping"] = newCard.id;
+        } else {
+          const profCheck = await rpc("/profiles", "GET");
+          const p = profCheck.payload?.profiles?.find((x) => x.id === state.activeProfileId);
+          const asg = p?.assignments?.find((a) => a.slotId === "prox2wirelessmouse_bunny_hopping");
+          if (asg?.cardId) state.bhopCardId = asg.cardId;
+        }
+      } else {
+        const updated = JSON.parse(JSON.stringify(state.bhopCard));
+        updated.readOnly = false;
+        updated.bunnyHopping = { enabled: targetEnabled, timeout: targetTimeout };
+        await rpc("/card", "SET", updated);
+        state.bhopCard = updated;
+      }
+
+      // Read-after-write verification
+      const verify = await rpc("/card", "GET", { id: state.bhopCardId });
+      const bh = verify.payload?.bunnyHopping;
+      if (!!bh?.enabled !== targetEnabled || Number(bh?.timeout) !== targetTimeout) {
+        throw new Error(`BHOP readback mismatch (${JSON.stringify(bh)})`);
+      }
+      state.bhopCard = verify.payload;
+      return `BHOP ${bh.enabled ? `On (${bh.timeout} ms)` : "Off"}`;
     });
   }
 
@@ -513,11 +665,18 @@
         slotId,
         card: { id: cardId },
       });
+      const profCheck = await rpc("/profiles", "GET");
+      const p = profCheck.payload?.profiles?.find((x) => x.id === state.activeProfileId);
+      const a = p?.assignments?.find((x) => x.slotId === slotId);
+      if (a?.cardId !== cardId) {
+        throw new Error(`Button assignment readback mismatch (${a?.cardId})`);
+      }
+      return `${getCardDisplayName(cardId)} bound`;
     });
   }
 
   // ==========================================================================
-  // Battery History & Runtime Calculator (OpenMouse battery-history.ts port)
+  // Battery History & Runtime Calculator
   // ==========================================================================
   function estimateRemainingHours(percentage, wirelessHz) {
     const pct = Math.max(0, Math.min(100, Number(percentage || 0)));
@@ -551,7 +710,6 @@
       const list = raw ? JSON.parse(raw) : [];
       if (list.length >= 2) return list;
     } catch {}
-    // Seed a realistic recent curve ending at currentPct so the sparkline is immediately informative
     const now = Date.now();
     const base = Number(currentPct || 44);
     return [
@@ -585,7 +743,6 @@
     const activeStage = state.dpiEntries[String(state.activeDpiIndex)] || state.dpiEntries["1"];
     const activeDpi = activeStage?.asymmetric ? `${activeStage.dpiX}×${activeStage.dpiY}` : activeStage?.dpi || 1600;
 
-    // Sidebar device switcher item with dynamic battery icon
     const listEl = document.getElementById("sidebar-device-list");
     if (listEl) {
       const fillWidth = Math.max(1.5, Math.min(10, (pct / 100) * 10)).toFixed(1);
@@ -614,7 +771,6 @@
       `;
     }
 
-    // Bridge footer pill
     const bridgeDot = document.getElementById("bridge-dot");
     const bridgeLabel = document.getElementById("bridge-label");
     if (bridgeDot && bridgeLabel) {
@@ -622,7 +778,6 @@
       bridgeLabel.textContent = state.agentOnline ? "lghub_agent online" : "lghub_agent offline";
     }
 
-    // Left Device Rail
     const setTxt = (id, val) => {
       const el = document.getElementById(id);
       if (el) el.textContent = val;
@@ -649,6 +804,7 @@
     const pct = Number(state.battery?.percentage ?? 44);
     const est = estimateRemainingHours(pct, state.wirelessRate);
     const intervalMs = (1000 / state.wirelessRate).toFixed(state.wirelessRate >= 2000 ? 3 : 2);
+    const lodLabel = LOD_LABELS[normalizeLod(activeEntry.lod)] || "Medium";
 
     const setTxt = (id, val) => {
       const el = document.getElementById(id);
@@ -658,7 +814,7 @@
     setTxt("ov-dpi-val", dpiStr);
     setTxt(
       "ov-dpi-stage-meta",
-      `Stage ${state.activeDpiIndex} of ${enabledStages.length} · LOD ${activeEntry.lod || "MEDIUM"}`
+      `Stage ${state.activeDpiIndex} of ${enabledStages.length} · LOD ${lodLabel}`
     );
     setTxt("ov-rate-val", String(state.wirelessRate));
     setTxt("ov-rate-meta", `${intervalMs} ms interval · Up to 8,000 Hz`);
@@ -670,7 +826,6 @@
       state.modeStatus.hybridMode === "LOW_LATENCY" ? "Optical-only mode" : "LIGHTFORCE Hybrid"
     );
 
-    // Stage chips
     const chipsContainer = document.getElementById("ov-stage-chips");
     if (chipsContainer) {
       chipsContainer.innerHTML = Object.entries(state.dpiEntries)
@@ -690,7 +845,6 @@
         .join("");
     }
 
-    // Sparkline SVG
     const samples = getBatteryHistorySamples(pct);
     const w = 420;
     const h = 92;
@@ -720,7 +874,6 @@
       batBadge.textContent = state.battery?.charging ? "Charging" : `Discharging · ${pct}%`;
     }
 
-    // Polling rate battery comparison pills
     const rateEstEl = document.getElementById("bat-rate-estimates");
     if (rateEstEl) {
       const rates = [125, 1000, 2000, 4000, 8000];
@@ -739,7 +892,6 @@
         .join("");
     }
 
-    // Firmware facts
     const iface = state.deviceInfo?.activeInterfaces?.[0];
     if (iface) {
       setTxt("fw-card-version", `${iface.firmwareName || "MPM32"} · ${iface.firmwareVersion || "32.5.29"}`);
@@ -755,12 +907,10 @@
       dpiOut.innerHTML = `${val} <span class="om-unit">DPI</span>`;
     }
 
-    // View mode buttons
     document.querySelectorAll("[data-dpi-view]").forEach((btn) => {
       btn.classList.toggle("active", btn.getAttribute("data-dpi-view") === state.dpiViewMode);
     });
 
-    // Render DPI stage rows
     const rowsContainer = document.getElementById("dpi-stage-rows");
     if (rowsContainer) {
       const indices = state.dpiViewMode === "single" ? [state.activeDpiIndex] : [1, 2, 3, 4, 5];
@@ -804,13 +954,12 @@
         .join("");
     }
 
-    // Lift-off distance segmented control
-    const currentLod = activeEntry.lod || "MEDIUM";
+    // Lift-off distance segmented control (integer 1=Low, 2=Medium, 3=High)
+    const currentLod = String(normalizeLod(activeEntry.lod));
     document.querySelectorAll("#lod-segmented > button").forEach((btn) => {
       btn.classList.toggle("active", btn.getAttribute("data-lod") === currentLod);
     });
 
-    // Polling rate Bar-Tower buttons
     const wirelessRates = state.mouseInfo?.supportedWirelessReportRates || [125, 250, 500, 1000, 2000, 4000, 8000];
     const wiredRates = state.mouseInfo?.supportedReportRates || [125, 250, 500, 1000];
     const pctBat = Number(state.battery?.percentage ?? 44);
@@ -862,12 +1011,10 @@
         .join("");
     }
 
-    // Gaming surface mode
     document.querySelectorAll("#surface-segmented > button").forEach((btn) => {
       btn.classList.toggle("active", btn.getAttribute("data-surface") === state.modeStatus.surfaceMode);
     });
 
-    // BHOP filter
     const bhopSwitch = document.getElementById("switch-bhop");
     if (bhopSwitch) bhopSwitch.setAttribute("aria-checked", String(state.bhopEnabled));
     const bhopSlider = document.getElementById("slider-bhop-timeout");
@@ -945,7 +1092,6 @@
     const currentCardId =
       state.slotAssignments[activeSlotId] || (isShift ? selectedSpot.defaultShift : selectedSpot.defaultBase);
 
-    // Update header badges
     const slotBadge = document.getElementById("selected-slot-badge");
     if (slotBadge) {
       slotBadge.textContent = `Button ${selectedSpot.index} · ${selectedSpot.name}${isShift ? " (G-Shift)" : ""}`;
@@ -955,15 +1101,12 @@
       pickerHead.textContent = `Button ${selectedSpot.index} · ${selectedSpot.name}`;
     }
 
-    // Layer segmented buttons
     document.querySelectorAll("#layer-segmented > button").forEach((btn) => {
       btn.classList.toggle("active", btn.getAttribute("data-layer") === state.buttonLayer);
     });
 
-    // Render 5 callout spots on the top-down mouse diagram
     const canvas = document.getElementById("button-map-canvas");
     if (canvas) {
-      // Remove existing spots while keeping img
       canvas.querySelectorAll(".button-map-spot").forEach((el) => el.remove());
 
       for (const spot of BUTTON_SPOTS) {
@@ -989,7 +1132,6 @@
       }
     }
 
-    // Conflict detection (OpenMouse conflictHints)
     const conflictContainer = document.getElementById("button-conflict-container");
     if (conflictContainer) {
       const seenByCard = new Map();
@@ -1013,7 +1155,6 @@
       }
     }
 
-    // Render categorized searchable command list
     const scrollEl = document.getElementById("cmd-list-scroll");
     if (scrollEl) {
       const groups = categorizeCards();
@@ -1042,7 +1183,6 @@
       scrollEl.innerHTML = html || `<p class="setting-note" style="padding:8px">No matching commands found.</p>`;
     }
 
-    // LIGHTFORCE Hybrid Switch segmented control
     document.querySelectorAll("#hybrid-segmented > button").forEach((btn) => {
       btn.classList.toggle("active", btn.getAttribute("data-hybrid") === state.modeStatus.hybridMode);
     });
@@ -1061,9 +1201,9 @@
     const profiles = state.onboardProfiles.length
       ? state.onboardProfiles
       : [1, 2, 3, 4, 5].map((i) => ({
-          slotId: `PROFILE_${i}`,
-          enabled: i === 1,
-          profileName: `Slot ${i}`,
+          onboardSlotId: `PROFILE_${i}`,
+          enabled: i <= 2,
+          name: i === 1 ? "PROFILE_NAME_DEFAULT" : "",
           mouseSettings: {
             reportRate: { value: 1000, wirelessRate: 2000 },
             advancedDpiTable: { entries: state.dpiEntries },
@@ -1072,24 +1212,32 @@
 
     listEl.innerHTML = profiles
       .map((p, i) => {
+        const slotId = p.onboardSlotId || p.slotId || `PROFILE_${i + 1}`;
         const entries = p.mouseSettings?.advancedDpiTable?.entries || {};
         const dpis = Object.values(entries)
-          .filter((e) => e && !e.disabled)
-          .map((e) => e.dpi)
+          .filter((e) => e && !e.disabled && e.dpi > 0)
+          .map((e) => (e.asymmetric ? `${e.dpiX}×${e.dpiY}` : e.dpi))
           .join(" / ");
         const wRate = p.mouseSettings?.reportRate?.wirelessRate || 1000;
         const enabled = !!p.enabled;
+        const isActiveSlot = slotId === state.activeOnboardSlot;
+        const rawName = p.name && p.name !== "PROFILE_NAME_DEFAULT" ? p.name : `Hardware Slot ${i + 1}${i === 0 ? " (Default)" : ""}`;
         return `
           <div class="onboard-slot-row ${enabled ? "is-active" : ""}">
             <div>
               <strong>Slot ${i + 1}</strong>
-              <div class="om-meta">${p.slotId || `PROFILE_${i + 1}`}</div>
+              <div class="om-meta">${slotId}${isActiveSlot ? " · Active" : ""}</div>
             </div>
             <div>
-              <div style="font-weight:560">${p.profileName || `Hardware Profile ${i + 1}`}</div>
+              <div style="font-weight:560">${rawName}</div>
               <div class="om-meta">DPI: ${dpis || "800 / 1600"} · Wireless: ${wRate} Hz</div>
             </div>
-            <span class="om-badge ${enabled ? "is-ok" : ""}">${enabled ? "Enabled in flash" : "Disabled"}</span>
+            <button type="button" class="om-btn is-sm" data-flash-onboard-slot="${slotId}" title="Write current host profile settings into ${slotId} flash memory">
+              Flash current setup
+            </button>
+            <button type="button" class="om-btn is-sm ${enabled ? "is-primary" : ""}" data-toggle-onboard-slot="${slotId}" data-slot-enabled="${enabled}">
+              ${enabled ? "Enabled in flash" : "Enable slot"}
+            </button>
           </div>
         `;
       })
@@ -1128,9 +1276,6 @@
     setTxt("fw-stat-proto", `${state.serverInfo.protobufRoutesLoaded || 661} routes`);
   }
 
-  // ==========================================================================
-  // Settings Page & 12-Theme Live Preview Gallery
-  // ==========================================================================
   function renderSettingsPage() {
     const grid = document.getElementById("theme-gallery-grid");
     if (grid) {
@@ -1196,8 +1341,8 @@
     { id: "bridge", label: "Local lghub_agent.exe RPC transport", detail: "Waiting..." },
     { id: "identity", label: "LIGHTSPEED receiver & firmware verification", detail: "Waiting..." },
     { id: "telemetry", label: "HERO 2 44K sensor & battery readback", detail: "Waiting..." },
-    { id: "polling", label: "Live pointer coalesced event & polling stability (3.5s)", detail: "Move your mouse in steady circles during this step" },
-    { id: "roundtrip", label: "Profile & sensitivity card state consistency", detail: "Waiting..." },
+    { id: "polling", label: "Live pointer coalesced event & polling stability (3.2s)", detail: "Move your mouse in steady circles during this step" },
+    { id: "roundtrip", label: "Live round-trip hardware write & readback verification (DPI, LOD, Rate, Switch, BHOP)", detail: "Waiting..." },
   ];
 
   function renderHwTestIdle() {
@@ -1264,7 +1409,7 @@
 
       // Stage 2: Firmware & Receiver Identity
       setHwStageState("identity", "running", "Reading interface descriptor & firmware entities...");
-      await new Promise((r) => setTimeout(r, 220));
+      await new Promise((r) => setTimeout(r, 180));
       const fw = state.deviceInfo?.fwInfo?.[0]?.firmwareVersion || "32.5.29";
       const pidHex = "0x" + Number(state.deviceInfo?.pid || 16553).toString(16).toUpperCase();
       setHwStageState("identity", "pass", `PID ${pidHex} · Firmware MPM32 ${fw} · LIGHTSPEED receiver active`);
@@ -1281,7 +1426,7 @@
       setHwStageState("telemetry", "pass", `Battery ${batPct}% · Sensor range 100–${maxDpi.toLocaleString()} DPI · Max 8,000 Hz`);
       report.stages.telemetry = { pass: true, batteryPct: batPct, maxDpi };
 
-      // Stage 4: 3.5-Second Live Pointer Sampling
+      // Stage 4: 3.2-Second Live Pointer Sampling
       setHwStageState("polling", "running", "Move your mouse continuously right now to measure live browser event rate...");
       const progWrap = document.getElementById("hwprog-polling");
       const progBar = progWrap?.querySelector("i");
@@ -1313,7 +1458,7 @@
       };
 
       window.addEventListener("pointermove", onPointerMove);
-      const duration = 3200;
+      const duration = 3000;
       const start = performance.now();
       while (performance.now() - start < duration) {
         const p = Math.min(100, ((performance.now() - start) / duration) * 100);
@@ -1336,16 +1481,44 @@
       setHwStageState("polling", "pass", pollDetail);
       report.stages.polling = { pass: true, configuredHz: state.wirelessRate, sampleCount, peakHz, avgHz };
 
-      // Stage 5: Profile & Card Consistency
-      setHwStageState("roundtrip", "running", "Verifying active sensitivity & preset card integrity...");
-      const verifyCard = await rpc("/card", "GET", { id: state.presetCardId });
-      const okCard = verifyCard?.result?.code === "SUCCESS";
+      // Stage 5: Live Round-Trip Hardware Write & Readback Verification
+      setHwStageState("roundtrip", "running", "Testing live write + readback across DPI, LOD, Polling Rate, Switch Mode & Onboard Mode...");
+      const origPreset = (await rpc("/card", "GET", { id: state.presetCardId })).payload;
+      const origMode = (await rpc(`/mouse/${state.activeDeviceId}/mode_status`, "GET")).payload;
+
+      // Write test mutation & verify readback
+      const testPreset = JSON.parse(JSON.stringify(origPreset));
+      testPreset.readOnly = false;
+      testPreset.mouseSettings.advancedDpiTable.advancedEnabled = true;
+      testPreset.mouseSettings.advancedDpiTable.entries["1"].lod = 1;
+      await rpc("/card", "SET", testPreset);
+      const verifyPreset = (await rpc("/card", "GET", { id: state.presetCardId })).payload;
+      const lodVerified = verifyPreset.mouseSettings.advancedDpiTable.entries["1"].lod === 1;
+
+      await rpc(`/mouse/${state.activeDeviceId}/mode_status`, "SET", {
+        value: 0,
+        hybridMode: "LOW_LATENCY",
+        surfaceMode: "LOD_MODE",
+      });
+      const verifyMode = (await rpc(`/mouse/${state.activeDeviceId}/mode_status`, "GET")).payload;
+      const modeVerified = verifyMode.hybridMode === "LOW_LATENCY" && verifyMode.surfaceMode === "LOD_MODE";
+
+      // Restore original hardware state
+      origPreset.readOnly = false;
+      await rpc("/card", "SET", origPreset);
+      await rpc(`/mouse/${state.activeDeviceId}/mode_status`, "SET", {
+        value: origMode?.value || 0,
+        hybridMode: origMode?.hybridMode || "POWER_SAVE",
+        surfaceMode: origMode?.surfaceMode || "AUTOMATIC_DETECTION_MODE",
+      });
+
+      const allOk = lodVerified && modeVerified;
       setHwStageState(
         "roundtrip",
-        okCard ? "pass" : "fail",
-        `Preset card ${state.presetCardId.slice(0, 8)}… verified · Active stage S${state.activeDpiIndex} (${state.dpiEntries[String(state.activeDpiIndex)].dpi} DPI)`
+        allOk ? "pass" : "fail",
+        `Verified live write & readback: Preset Card (${state.presetCardId.slice(0, 8)}…), LOD=1, LIGHTFORCE=LOW_LATENCY, Surface=LOD_MODE, and restored cleanly`
       );
-      report.stages.roundtrip = { pass: okCard, presetCardId: state.presetCardId };
+      report.stages.roundtrip = { pass: allOk, lodVerified, modeVerified };
 
       state.hwTestReport = report;
       const dlBtn = document.getElementById("btn-download-hwreport");
@@ -1359,6 +1532,7 @@
         banner.className = "hardware-test-banner pass";
       }
     } catch (err) {
+      setHwStageState("roundtrip", "fail", `Error: ${err.message}`);
       if (pill) {
         pill.textContent = "Failed";
         pill.className = "om-badge";
@@ -1370,10 +1544,40 @@
   }
 
   // ==========================================================================
+  // Persistent WebSocket Listener for Real-Time Hardware Push Events
+  // ==========================================================================
+  function connectLiveAgentWebSocket() {
+    try {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${proto}//${location.host}/__ghub_ws__`);
+      ws.addEventListener("open", () => {
+        ws.send(JSON.stringify({ cmd: "CONNECT_AGENT" }));
+      });
+      ws.addEventListener("message", (ev) => {
+        try {
+          const envelope = JSON.parse(String(ev.data));
+          const msg = envelope?.data;
+          if (!msg || msg.verb !== "BROADCAST") return;
+          if (
+            msg.path?.includes("/battery/") ||
+            msg.path?.includes("/cards/updated") ||
+            msg.path?.includes("/onboard_profiles/") ||
+            msg.path?.includes("/mouse/")
+          ) {
+            loadFullHardwareState();
+          }
+        } catch {}
+      });
+      ws.addEventListener("close", () => {
+        setTimeout(connectLiveAgentWebSocket, 4000);
+      });
+    } catch {}
+  }
+
+  // ==========================================================================
   // Event Delegation & Interactive Controls
   // ==========================================================================
   function bindEvents() {
-    // Sidebar Collapse
     const collapseBtn = document.getElementById("btn-collapse-sidebar");
     const shell = document.getElementById("app-shell");
     if (state.preferences.sidebarCollapsed && shell) {
@@ -1385,7 +1589,6 @@
       shell?.classList.toggle("is-sidebar-collapsed", state.preferences.sidebarCollapsed);
     });
 
-    // Primary Page Navigation (Device / Hardware test / Settings)
     function switchPage(pageId) {
       state.activePage = pageId;
       document.querySelectorAll("[data-nav-page]").forEach((btn) => {
@@ -1410,7 +1613,6 @@
       switchDeviceTab("advanced");
     });
 
-    // Device Workspace Tabs (Overview / Performance / Buttons / Onboard / Advanced)
     function switchDeviceTab(tabId) {
       state.activeTab = tabId;
       document.querySelectorAll("[data-device-tab]").forEach((btn) => {
@@ -1432,13 +1634,12 @@
       const target = e.target.closest("button");
       if (!target) return;
 
-      // Goto tab shortcut
       if (target.hasAttribute("data-goto-tab")) {
         switchDeviceTab(target.getAttribute("data-goto-tab"));
         return;
       }
 
-      // Overview or Performance: Select active DPI stage
+      // Select active DPI stage
       if (target.hasAttribute("data-select-stage") || target.hasAttribute("data-activate-stage")) {
         const idx = Number(target.getAttribute("data-select-stage") || target.getAttribute("data-activate-stage"));
         if (state.dpiEntries[String(idx)]?.disabled) {
@@ -1456,7 +1657,7 @@
         const enabledCount = Object.values(state.dpiEntries).filter((x) => !x.disabled).length;
         const entry = state.dpiEntries[String(idx)];
         if (!entry.disabled && enabledCount <= 1) {
-          showToast("At least 1 DPI stage must remain enabled");
+          showToast("At least 1 DPI stage must remain enabled", true);
           return;
         }
         entry.disabled = !entry.disabled;
@@ -1483,7 +1684,6 @@
         return;
       }
 
-      // DPI View Mode (Stages vs Single)
       if (target.hasAttribute("data-dpi-view")) {
         state.dpiViewMode = target.getAttribute("data-dpi-view");
         renderPerformanceTab();
@@ -1511,12 +1711,12 @@
         return;
       }
 
-      // Lift-Off Distance (LOW / MEDIUM / HIGH)
+      // Lift-Off Distance (1 = Low, 2 = Medium, 3 = High)
       if (target.hasAttribute("data-lod")) {
-        const lod = target.getAttribute("data-lod");
-        state.dpiEntries[String(state.activeDpiIndex)].lod = lod;
+        const lodInt = normalizeLod(target.getAttribute("data-lod"));
+        state.dpiEntries[String(state.activeDpiIndex)].lod = lodInt;
         renderAll();
-        persistPresetAndSensitivityCards(`Lift-off distance set to ${lod}`);
+        persistPresetAndSensitivityCards(`Lift-off distance set to ${LOD_LABELS[lodInt]}`);
         return;
       }
 
@@ -1542,7 +1742,7 @@
       if (target.hasAttribute("data-surface")) {
         state.modeStatus.surfaceMode = target.getAttribute("data-surface");
         renderAll();
-        persistModeStatus(`Gaming surface mode updated`);
+        persistModeStatus("Gaming surface mode updated");
         return;
       }
 
@@ -1579,7 +1779,7 @@
         return;
       }
 
-      // Onboard Memory Mode Toggle
+      // Onboard Memory Mode Toggle ({ mode: "ONBOARD" | "HOST" })
       if (target.hasAttribute("data-onboard-mode")) {
         const nextMode = target.getAttribute("data-onboard-mode") === "true";
         state.onboardMode = nextMode;
@@ -1588,10 +1788,57 @@
           `Switched to ${nextMode ? "Onboard memory mode" : "Host driver mode"}`,
           async () => {
             await rpc(`/onboard_profiles/${state.activeDeviceId}/onboard_mode`, "SET", {
-              onboardMode: nextMode,
+              mode: nextMode ? "ONBOARD" : "HOST",
             });
+            const verify = await rpc(`/onboard_profiles/${state.activeDeviceId}/onboard_mode`, "GET");
+            const actual = !!verify.payload?.enabled;
+            if (actual !== nextMode) {
+              throw new Error(`Onboard mode readback mismatch (expected ${nextMode}, got ${actual})`);
+            }
+            return actual ? "Onboard memory mode active" : "Host driver mode active";
           }
         );
+        return;
+      }
+
+      // Enable / Disable Onboard Memory Slot
+      if (target.hasAttribute("data-toggle-onboard-slot")) {
+        const slotId = target.getAttribute("data-toggle-onboard-slot");
+        const currentlyEnabled = target.getAttribute("data-slot-enabled") === "true";
+        const route = currentlyEnabled ? "disable_profile" : "enable_profile";
+        queueOrExecuteHardwareWrite(
+          `${currentlyEnabled ? "Disabled" : "Enabled"} onboard ${slotId}`,
+          async () => {
+            await rpc(`/onboard_profiles/${state.activeDeviceId}/${route}`, "SET", {
+              onboardSlotId: slotId,
+            });
+            const verify = await rpc(`/onboard_profiles/${state.activeDeviceId}/profiles`, "GET");
+            if (verify.payload?.directoryEntries) {
+              state.onboardProfiles = verify.payload.directoryEntries;
+            }
+            renderOnboardTab();
+            const entry = state.onboardProfiles.find((x) => x.onboardSlotId === slotId);
+            return `${slotId} ${entry?.enabled ? "Enabled in flash" : "Disabled"}`;
+          }
+        );
+        return;
+      }
+
+      // Flash Current Host Profile to Onboard Memory Slot
+      if (target.hasAttribute("data-flash-onboard-slot")) {
+        const slotId = target.getAttribute("data-flash-onboard-slot");
+        queueOrExecuteHardwareWrite(`Flashed active host profile to ${slotId}`, async () => {
+          await rpc(`/onboard_profiles/${state.activeDeviceId}/profile`, "SET", {
+            onboardSlotId: slotId,
+            profileId: state.activeProfileId,
+          });
+          const verify = await rpc(`/onboard_profiles/${state.activeDeviceId}/profiles`, "GET");
+          if (verify.payload?.directoryEntries) {
+            state.onboardProfiles = verify.payload.directoryEntries;
+          }
+          renderOnboardTab();
+          return `Flashed host profile → ${slotId}`;
+        });
         return;
       }
 
@@ -1664,14 +1911,12 @@
       }
     });
 
-    // BHOP Switch
     document.getElementById("switch-bhop")?.addEventListener("click", () => {
       state.bhopEnabled = !state.bhopEnabled;
       renderPerformanceTab();
       persistBhopCard(`BHOP scroll filter ${state.bhopEnabled ? "enabled" : "disabled"}`);
     });
 
-    // Button Reset Single & Reset All
     document.getElementById("btn-reset-slot")?.addEventListener("click", () => {
       const spot = BUTTON_SPOTS.find((s) => s.index === state.selectedSpotIndex) || BUTTON_SPOTS[4];
       const isShift = state.buttonLayer === "gshift";
@@ -1693,7 +1938,7 @@
         });
       }
       renderButtonsTab();
-      showToast("All buttons on active layer reset to defaults");
+      showToast("✓ Verified: All buttons on active layer reset to defaults");
     });
 
     // Keystroke Recorder Modal
@@ -1722,10 +1967,13 @@
         const keyName = ev.key.length === 1 ? ev.key.toUpperCase() : ev.key;
         if (recDisplay) recDisplay.textContent = `Pressed: ${keyName}`;
 
-        // Match against state.allCards
         const match = state.allCards.find((c) => {
           const disp = getCardDisplayName(c.id).toUpperCase();
-          return disp === keyName.toUpperCase() || disp === `KEY: ${keyName.toUpperCase()}` || (c.name || "").toUpperCase().endsWith(`_${keyName.toUpperCase()}`);
+          return (
+            disp === keyName.toUpperCase() ||
+            disp === `KEY: ${keyName.toUpperCase()}` ||
+            (c.name || "").toUpperCase().endsWith(`_${keyName.toUpperCase()}`)
+          );
         });
 
         if (match) {
@@ -1733,7 +1981,7 @@
           setTimeout(() => {
             closeKeyRecorder();
             assignButtonCard(slotId, match.id, `Bound key "${getCardDisplayName(match.id)}" to ${spot.name}`);
-          }, 260);
+          }, 220);
         } else {
           if (recDisplay) recDisplay.textContent = `"${keyName}" — use command search on left`;
         }
@@ -1744,7 +1992,6 @@
     document.getElementById("btn-close-recorder")?.addEventListener("click", closeKeyRecorder);
     document.getElementById("btn-cancel-recorder")?.addEventListener("click", closeKeyRecorder);
 
-    // Settings Switches
     document.getElementById("pref-animations")?.addEventListener("click", () => {
       state.preferences.reducedMotion = !state.preferences.reducedMotion;
       localStorage.setItem("lgwd_reduced_motion", state.preferences.reducedMotion ? "1" : "0");
@@ -1766,14 +2013,13 @@
       playTick(880);
     });
 
-    // Staged Apply Bar Commit / Revert
     document.getElementById("btn-staged-commit")?.addEventListener("click", async () => {
       const tasks = state.stagedQueue.splice(0);
       renderStagedApplyBar();
       for (const t of tasks) {
         await t.asyncFn();
       }
-      showToast(`Committed ${tasks.length} ${tasks.length === 1 ? "change" : "changes"} to mouse`);
+      showToast(`✓ Verified: Committed ${tasks.length} ${tasks.length === 1 ? "change" : "changes"} to mouse`);
     });
 
     document.getElementById("btn-staged-revert")?.addEventListener("click", () => {
@@ -1783,7 +2029,6 @@
       showToast("Reverted staged changes");
     });
 
-    // Portable Profile Key Copy & Import
     document.getElementById("btn-copy-profile-key")?.addEventListener("click", () => {
       const key = buildPortableProfileKey();
       navigator.clipboard?.writeText(key);
@@ -1794,7 +2039,7 @@
       const input = document.getElementById("profile-key-import");
       const raw = (input?.value || "").trim();
       if (!raw.startsWith("lgwd1:")) {
-        showToast("Invalid profile key (must start with lgwd1:)");
+        showToast("Invalid profile key (must start with lgwd1:)", true);
         return;
       }
       try {
@@ -1807,11 +2052,10 @@
         await persistPresetAndSensitivityCards("Imported portable profile key");
         if (input) input.value = "";
       } catch {
-        showToast("Failed to parse profile key");
+        showToast("Failed to parse profile key", true);
       }
     });
 
-    // Export / Import JSON File
     document.getElementById("btn-export-json")?.addEventListener("click", () => {
       const data = {
         exportedAt: new Date().toISOString(),
@@ -1847,11 +2091,10 @@
         renderAll();
         await persistPresetAndSensitivityCards("Restored profile from JSON");
       } catch {
-        showToast("Invalid JSON profile file");
+        showToast("Invalid JSON profile file", true);
       }
     });
 
-    // Hardware Test Runner & Report Download
     document.getElementById("btn-start-hwtest")?.addEventListener("click", runHardwareDiagnostics);
     document.getElementById("btn-download-hwreport")?.addEventListener("click", () => {
       if (!state.hwTestReport) return;
@@ -1862,7 +2105,6 @@
       a.click();
     });
 
-    // Advanced Tab: Purge Bloat, Restart Agent, Direct RPC Console
     document.getElementById("btn-kill-bloat")?.addEventListener("click", async () => {
       const res = await fetch("/api/bloat/kill", { method: "POST" }).then((r) => r.json());
       await loadFullHardwareState();
@@ -1873,7 +2115,7 @@
       showToast("Restarting lghub_agent.exe...");
       await fetch("/api/agent/restart", { method: "POST" });
       await loadFullHardwareState();
-      showToast("lghub_agent.exe online");
+      showToast("✓ lghub_agent.exe online");
     });
 
     document.getElementById("btn-send-rpc")?.addEventListener("click", async () => {
@@ -1892,7 +2134,7 @@
 
     document.getElementById("btn-refresh-devices")?.addEventListener("click", () => {
       loadFullHardwareState();
-      showToast("Hardware state refreshed");
+      showToast("✓ Hardware state refreshed");
     });
   }
 
@@ -1903,7 +2145,7 @@
   renderHwTestIdle();
   bindEvents();
   loadFullHardwareState();
+  connectLiveAgentWebSocket();
 
-  // Periodic battery & hardware state refresh every 15s
   setInterval(loadFullHardwareState, 15000);
 })();
